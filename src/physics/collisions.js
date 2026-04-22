@@ -304,7 +304,10 @@ export function collideWall(b, wall) {
     const dF = (b.mat.deform ?? 0.4);
     b.squash = 1 - Math.min(0.4 * dF, Math.abs(vn) * 0.0008 * dF);
     b.squashAng = Math.atan2(ny, nx);
-    addDent(b, Math.atan2(ny, nx), mag);
+    // Dent sits on the side of the ball that actually touched the wall —
+    // that's the direction from ball center to contact point, which is
+    // opposite the outward normal (`-nx, -ny`).
+    addDent(b, Math.atan2(-ny, -nx), mag);
     Snd.wall(b, mag, Math.abs(vn));
   }
   stats.collisions++;
@@ -349,7 +352,8 @@ export function collidePeg(b, peg) {
   const mag = Math.abs(vn) * b.mass;
   if (mag > 4) {
     spawnImpactFor(b.mat, peg.x + nx * peg.r, peg.y + ny * peg.r, nx, ny, mag);
-    addDent(b, Math.atan2(ny, nx), mag);
+    // Contact side of the ball is opposite the outward normal from the peg.
+    addDent(b, Math.atan2(-ny, -nx), mag);
     if (peg.bumper) {
       b.vx += nx * 500 * invMass(b);
       b.vy += ny * 500 * invMass(b);
