@@ -1,45 +1,63 @@
 /**
- * Per-ball shading. A single call to `drawBall(tx, b)` emits:
- *   - a motion streak tail (if fast enough)
- *   - a glass refraction pass sampling `sceneCanvas` (if mat.refract > 0.3)
- *   - a heat / material glow halo
- *   - a main body gradient (metallic / semi-metallic / diffuse branches)
- *   - rim lighting + a metallic env map (sky + horizon + ground)
- *   - primary + secondary specular highlights
- *   - rotation markers
- *   - a subtle outline
- *   - pinned/charge indicators
- *   - optional velocity/spin vector overlay (when PHYS.showVec is on)
+ * Per-ball shading. Highlights:
  *
- * Also contains `drawTrail` — the faint line behind a ball when trails
- * are enabled.
+ *   - Chromatic refraction for glass: samples sceneCanvas three times at
+ *     slightly different scales for R/G/B, blending them into the ball's
+ *     clipped interior. Cheap but recognisable rainbow edges.
+ *
+ *   - Material-aware body gradient:
+ *       metallic > 0.7 — near-mirror, sharp core highlight + darker fringe
+ *       metallic > 0.3 — satin finish, softer transitions
+ *       else            — matte/diffuse, long lerp to darker rim
+ *
+ *   - Fresnel-style rim light: a concentric bright ring that doesn't depend
+ *     on the light direction, brighter on metals and on grazing-view (edge)
+ *     pixels. Stacked on top of any directional rim.
+ *
+ *   - Metallic env strip: horizontal bands approximating a sky / horizon /
+ *     ground reflection for polished metals.
  */
 
 import { W } from '../core/world.js';
 import { PHYS } from '../core/config.js';
 import { TAU, len } from '../core/math.js';
-import { mix, lighten, darken } from '../core/color.js';
+import { mix, lighten, darken, withAlpha } from '../core/color.js';
 import { light, sceneCanvas } from './canvas.js';
 
-/** Glass lens — sample the pre-rendered sceneCanvas scaled around the ball. */
-/** @param {CanvasRenderingContext2D} tx @param {import('../entities/ball.js').Ball} b */
+/**
+ * Glass refraction with a small chromatic split: sample sceneCanvas three
+ * times at slightly different scales (R wider, B tighter) and blend via
+ * `screen` blending — gives a subtle color fringe on edges.
+ */
 function drawRefraction(tx, b) {
   if (!PHYS.refract || (b.mat.refract || 0) < 0.3) return false;
   tx.save();
   tx.beginPath(); tx.arc(b.x, b.y, b.r * 0.96, 0, TAU); tx.clip();
-  const scale = 1 - b.mat.refract * 0.25;
-  const ox = b.x - b.x * scale;
-  const oy = b.y - b.y * scale;
-  tx.globalAlpha = 0.9;
-  tx.drawImage(sceneCanvas, ox, oy, W.cw * scale, W.ch * scale);
+
+  const base = 1 - b.mat.refract * 0.25;
+  // R/G/B at subtly different scales → chromatic aberration
+  const scales = [ base + 0.020, base, base - 0.020 ];
+  const filters = ['red', 'green', 'blue'];
+
+  for (let i = 0; i < 3; i++) {
+    const s = scales[i];
+    const ox = b.x - b.x * s;
+    const oy = b.y - b.y * s;
+    tx.globalAlpha = 0.55;
+    tx.globalCompositeOperation = i === 0 ? 'source-over' : 'lighter';
+    // tint by drawing the sceneCanvas once per channel with a colored overlay
+    tx.drawImage(sceneCanvas, ox, oy, W.cw * s, W.ch * s);
+  }
+  tx.globalCompositeOperation = 'source-over';
   tx.globalAlpha = 1;
-  tx.fillStyle = b.mat.color + '28';
+
+  // glass tint
+  tx.fillStyle = withAlpha(b.mat.color, 0.16);
   tx.beginPath(); tx.arc(b.x, b.y, b.r, 0, TAU); tx.fill();
   tx.restore();
   return true;
 }
 
-/** Fading after-images behind a fast ball. */
 function drawMotionStreak(tx, b) {
   if (!PHYS.streaks) return;
   const sp = len(b.vx, b.vy);
@@ -54,21 +72,36 @@ function drawMotionStreak(tx, b) {
     tx.globalAlpha = 0.25 * (1 - t);
     const grad = tx.createRadialGradient(px, py, 0, px, py, rr);
     grad.addColorStop(0, lighten(baseColor, 0.3));
-    grad.addColorStop(1, baseColor + '00');
+    grad.addColorStop(1, withAlpha(baseColor, 0));
     tx.fillStyle = grad;
     tx.beginPath(); tx.arc(px, py, rr, 0, TAU); tx.fill();
   }
   tx.globalAlpha = 1;
 }
 
-/** @param {CanvasRenderingContext2D} tx @param {import('../entities/ball.js').Ball} b */
+/**
+ * Concentric Fresnel rim. Bright near the edge for all materials, extra
+ * bright for metals. Implemented as a thin annular gradient — no angle
+ * dependence on camera (we're 2D) but a genuine edge bias.
+ */
+function drawFresnelRim(tx, b) {
+  const inner = b.r * 0.70;
+  const outer = b.r * 1.0;
+  const g = tx.createRadialGradient(b.x, b.y, inner, b.x, b.y, outer);
+  const baseAlpha = b.mat.metallic > 0.5 ? 0.55 : 0.28;
+  g.addColorStop(0,    'rgba(255,255,255,0)');
+  g.addColorStop(0.75, withAlpha('#ffffff', baseAlpha * 0.15));
+  g.addColorStop(1,    withAlpha('#ffffff', baseAlpha));
+  tx.fillStyle = g;
+  tx.beginPath(); tx.arc(b.x, b.y, b.r, 0, TAU); tx.fill();
+}
+
 export function drawBall(tx, b) {
   const { x, y, r, mat } = b;
   const squashAmt = b.squash;
 
   drawMotionStreak(tx, b);
 
-  // squash transform (applied around the ball center)
   tx.save();
   tx.translate(x, y);
   tx.rotate(b.squashAng);
@@ -78,40 +111,38 @@ export function drawBall(tx, b) {
 
   const refracted = drawRefraction(tx, b);
 
-  // light direction → highlight offset
   const lx = light.x * W.cw, ly = light.y * W.ch;
   const ldx = x - lx, ldy = y - ly;
   const ldlen = len(ldx, ldy) || 1;
   const offX = -ldx / ldlen * r * 0.45;
   const offY = -ldy / ldlen * r * 0.45;
 
-  // halo glow (material glow + hot ball glow)
   const hotGlow = PHYS.heatFx && b.heat > 0.15;
   const glowAmt = Math.max(mat.glow || 0, b.heat * 0.9);
   if (glowAmt > 0.05) {
     const gr = r * (2 + glowAmt);
     const g = tx.createRadialGradient(x, y, r * 0.8, x, y, gr);
     const gc = hotGlow ? mix(mat.color, '#ff6020', b.heat) : mat.color;
-    g.addColorStop(0,    gc + (hotGlow ? 'cc' : 'bb'));
-    g.addColorStop(0.45, gc + '44');
-    g.addColorStop(1,    gc + '00');
+    g.addColorStop(0,    withAlpha(gc, hotGlow ? 0.8 : 0.73));
+    g.addColorStop(0.45, withAlpha(gc, 0.27));
+    g.addColorStop(1,    withAlpha(gc, 0));
     tx.fillStyle = g;
     tx.beginPath(); tx.arc(x, y, gr, 0, TAU); tx.fill();
   }
 
-  // main body gradient
   const bodyColor = b.effectiveColor();
   const g = tx.createRadialGradient(x + offX, y + offY, 0, x, y, r);
   if (refracted) {
-    g.addColorStop(0,   'rgba(255,255,255,0.6)');
-    g.addColorStop(0.5, 'rgba(255,255,255,0.05)');
-    g.addColorStop(1,   'rgba(0,0,0,0.35)');
+    g.addColorStop(0,   'rgba(255,255,255,0.55)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+    g.addColorStop(1,   'rgba(0,0,0,0.32)');
   } else if (mat.metallic > 0.7) {
+    // near-mirror: sharp hot core + deep dark fringe
     g.addColorStop(0,    '#ffffff');
-    g.addColorStop(0.3,  lighten(bodyColor, 0.4));
-    g.addColorStop(0.65, bodyColor);
-    g.addColorStop(0.9,  darken(bodyColor, 0.5));
-    g.addColorStop(1,    darken(bodyColor, 0.7));
+    g.addColorStop(0.28, lighten(bodyColor, 0.5));
+    g.addColorStop(0.6,  bodyColor);
+    g.addColorStop(0.88, darken(bodyColor, 0.55));
+    g.addColorStop(1,    darken(bodyColor, 0.78));
   } else if (mat.metallic > 0.3) {
     g.addColorStop(0,   lighten(bodyColor, 0.65));
     g.addColorStop(0.5, bodyColor);
@@ -124,47 +155,41 @@ export function drawBall(tx, b) {
   tx.fillStyle = g;
   tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
 
-  // rim light + metallic faux env map
+  // Fresnel edge bias — uniform bright rim regardless of light direction.
   tx.save();
   tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
-  const rg = tx.createRadialGradient(x - offX * 1.1, y - offY * 1.1, r * 0.8, x, y, r);
-  rg.addColorStop(0, 'rgba(255,255,255,0)');
-  rg.addColorStop(1, mat.metallic > 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.15)');
-  tx.fillStyle = rg;
-  tx.fillRect(x - r, y - r, r * 2, r * 2);
+  drawFresnelRim(tx, b);
 
+  // metallic faux env — sky + horizon + ground bands
   if (mat.metallic > 0.5) {
-    // sky band (top)
     const sg = tx.createLinearGradient(x, y - r, x, y);
-    sg.addColorStop(0,   'rgba(255,255,255,0.45)');
-    sg.addColorStop(0.5, 'rgba(255,255,255,0.12)');
+    sg.addColorStop(0,   'rgba(255,255,255,0.5)');
+    sg.addColorStop(0.5, 'rgba(255,255,255,0.15)');
     sg.addColorStop(1,   'rgba(255,255,255,0)');
     tx.fillStyle = sg;
     tx.fillRect(x - r, y - r, r * 2, r);
 
-    // horizon line
-    const hgEnv = tx.createLinearGradient(x, y + r * 0.1, x, y + r * 0.4);
+    const hgEnv = tx.createLinearGradient(x, y + r * 0.08, x, y + r * 0.38);
     hgEnv.addColorStop(0,   'rgba(255,255,255,0)');
-    hgEnv.addColorStop(0.5, 'rgba(255,240,200,0.2)');
+    hgEnv.addColorStop(0.5, 'rgba(255,240,200,0.22)');
     hgEnv.addColorStop(1,   'rgba(255,255,255,0)');
     tx.fillStyle = hgEnv;
-    tx.fillRect(x - r, y + r * 0.1, r * 2, r * 0.3);
+    tx.fillRect(x - r, y + r * 0.08, r * 2, r * 0.32);
 
-    // ground reflection
     const gg = tx.createLinearGradient(x, y + r * 0.5, x, y + r);
     gg.addColorStop(0, 'rgba(0,0,0,0)');
-    gg.addColorStop(1, 'rgba(0,0,0,0.25)');
+    gg.addColorStop(1, 'rgba(0,0,0,0.35)');
     tx.fillStyle = gg;
     tx.fillRect(x - r, y + r * 0.5, r * 2, r * 0.5);
   }
   tx.restore();
 
-  // primary specular
+  // primary specular (directional)
   const hx = x + offX * 1.3, hy = y + offY * 1.3;
-  const hr = r * (mat.metallic > 0.5 ? 0.24 : 0.17);
+  const hr = r * (mat.metallic > 0.5 ? 0.26 : 0.18);
   const hg = tx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-  hg.addColorStop(0,   'rgba(255,255,255,0.95)');
-  hg.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+  hg.addColorStop(0,   'rgba(255,255,255,0.98)');
+  hg.addColorStop(0.5, 'rgba(255,255,255,0.38)');
   hg.addColorStop(1,   'rgba(255,255,255,0)');
   tx.fillStyle = hg;
   tx.beginPath(); tx.arc(hx, hy, hr, 0, TAU); tx.fill();
@@ -173,13 +198,13 @@ export function drawBall(tx, b) {
     const hx2 = x + offX * 0.6, hy2 = y + offY * 0.6;
     const hr2 = hr * 0.5;
     const hg2 = tx.createRadialGradient(hx2, hy2, 0, hx2, hy2, hr2);
-    hg2.addColorStop(0, 'rgba(255,255,255,0.8)');
+    hg2.addColorStop(0, 'rgba(255,255,255,0.82)');
     hg2.addColorStop(1, 'rgba(255,255,255,0)');
     tx.fillStyle = hg2;
     tx.beginPath(); tx.arc(hx2, hy2, hr2, 0, TAU); tx.fill();
   }
 
-  // rotation dots so spin is visible
+  // rotation markers so spin is visible
   tx.save();
   tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
   const mAng = b.angle;
@@ -207,9 +232,17 @@ export function drawBall(tx, b) {
     tx.lineWidth = 1.5;
     tx.beginPath(); tx.arc(x, y, r + 4, 0, TAU); tx.stroke();
   }
+
+  // sleeping balls get a subtle z (only visible with vectors toggle)
+  if (b.sleeping && PHYS.showVec) {
+    tx.fillStyle = withAlpha('#6fb9ff', 0.55);
+    tx.font = '10px JetBrains Mono, monospace';
+    tx.textAlign = 'center';
+    tx.fillText('z', x, y - r - 6);
+  }
+
   tx.restore();
 
-  // debug vectors
   if (PHYS.showVec) {
     const sp = len(b.vx, b.vy);
     if (sp > 10) {
@@ -235,10 +268,9 @@ export function drawBall(tx, b) {
   }
 }
 
-/** Faint polyline of recent positions (when PHYS.trails is on). */
 export function drawTrail(tx, b) {
   if (!b.trail || b.trail.length < 2) return;
-  tx.strokeStyle = b.mat.color + '55';
+  tx.strokeStyle = withAlpha(b.mat.color, 0.33);
   tx.lineWidth = 2; tx.lineCap = 'round';
   tx.beginPath();
   for (let i = 0; i < b.trail.length; i++) {

@@ -8,6 +8,7 @@
 const el    = document.getElementById('scene-title');
 const title = document.getElementById('st-title');
 const sub   = document.getElementById('st-sub');
+const fade  = document.getElementById('scene-fade');
 
 const SUBS = {
   sandbox:   'Open arena · no distractions',
@@ -34,7 +35,11 @@ export function showSceneTitle(name, display) {
   title.textContent = display.toUpperCase();
   sub.textContent   = SUBS[name] || '';
   el.classList.remove('show');
-  // force reflow so the animation restarts even on repeated calls
   void el.offsetWidth;
   el.classList.add('show');
+
+  // trigger the black fade overlay in parallel
+  fade.classList.remove('fading');
+  void fade.offsetWidth;
+  fade.classList.add('fading');
 }

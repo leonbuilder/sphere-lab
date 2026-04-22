@@ -2,7 +2,7 @@
  * World + camera state. Reset by `clearWorld()` whenever a scene loads.
  */
 
-import { balls } from '../entities/ball.js';
+import { balls, wakeAll } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
 import { PHYS } from './config.js';
 
@@ -92,6 +92,9 @@ export function setGravityUI(on, g) {
     const s = /** @type {HTMLInputElement} */ (document.getElementById('s-g'));
     if (s) { s.value = String(g); document.getElementById('v-g').textContent = String(g); }
   }
+  // wake every ball — sleeping balls resting on gravity shouldn't stay frozen
+  // in place when gravity vanishes or flips magnitude
+  wakeAll();
   const b = document.getElementById('btn-gravity');
   if (!b) return;
   const span = b.querySelector('span:not(.kbd)');

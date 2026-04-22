@@ -12,7 +12,7 @@
 import { W } from '../core/world.js';
 import { PHYS } from '../core/config.js';
 import { clamp, len, rand } from '../core/math.js';
-import { balls } from '../entities/ball.js';
+import { balls, wake } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
 
@@ -94,8 +94,8 @@ export function applyBuoyancy(b, dt) {
 export function applyMagnetism(dt) {
   const mags = balls.filter(b => b.mat.magnetic);
   if (mags.length < 2) return;
-  const k = 80000;      // strength
-  const eps = 900;       // soft-range
+  const k = 80000;
+  const eps = 900;
   for (let i = 0; i < mags.length; i++) {
     const a = mags[i];
     if (a.pinned) continue;
@@ -106,6 +106,8 @@ export function applyMagnetism(dt) {
       const d = Math.sqrt(d2) || 0.001;
       const nx = dx / d, ny = dy / d;
       const f = k / (d2 + eps);
+      // a meaningful magnetic force should wake both participants
+      if (f > 30) { wake(a); wake(b); }
       a.vx += nx * f / a.mass * dt;
       a.vy += ny * f / a.mass * dt;
       if (!b.pinned) {

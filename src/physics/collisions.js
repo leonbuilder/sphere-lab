@@ -1,13 +1,14 @@
 /**
  * Contact resolution. Three entry points:
- *   collideBalls(a, b) — ball/ball, impulse-based, with spin transfer + heat
- *   collideWall(b, w)  — ball/line, with rolling friction + optional conveyor drag
- *   collidePeg(b, p)   — ball/disc, with pinball bumper extra-kick
+ *   collideBalls(a, b) — ball/ball, impulse-based
+ *   collideWall(b, w)  — ball/line (incl. conveyor-belt drag)
+ *   collidePeg(b, p)   — ball/disc (incl. pinball bumper kick)
  *
- * Conveyor walls have `wall.conveyorV`: a scalar target tangential velocity
- * (positive = toward (x2,y2)). On contact we pull the ball's tangential
- * velocity toward that target, scaled by material friction — slippery balls
- * slide along the belt, grippy ones get swept along.
+ * Restitution combines via `min(eA, eB)` — the softer material dominates
+ * the bounce, which matches experiment better than an arithmetic average.
+ *
+ * Every contact wakes both participants so resting stacks respond to
+ * nudges correctly.
  */
 
 import { clamp, rand } from '../core/math.js';
@@ -16,6 +17,7 @@ import { spawnImpact } from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
 import { velRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from './materialMods.js';
 import { stats } from './stats.js';
+import { wake } from '../entities/ball.js';
 
 export function separateBalls(a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -46,7 +48,8 @@ export function collideBalls(a, b) {
   const vn = rvx * nx + rvy * ny;
   if (vn > 0) return;
 
-  const baseE = (a.mat.restitution + b.mat.restitution) * 0.5;
+  // softer material dominates — min() is closer to real behaviour than avg
+  const baseE = Math.min(a.mat.restitution, b.mat.restitution);
   const e = baseE * PHYS.restitutionMul * velRestScale(Math.abs(vn)) * heatRestMod(a) * heatRestMod(b);
   const invMa = a.pinned ? 0 : 1 / a.mass;
   const invMb = b.pinned ? 0 : 1 / b.mass;
@@ -78,6 +81,8 @@ export function collideBalls(a, b) {
   const heatGain = Math.abs(jt) * 0.00005 + Math.abs(vn) * 0.00002;
   a.heat = Math.min(1, a.heat + heatGain);
   b.heat = Math.min(1, b.heat + heatGain);
+
+  wake(a); wake(b);
 
   const mag = Math.abs(j);
   if (mag > 2) {
@@ -131,7 +136,6 @@ export function collideWall(b, wall) {
   b.vx += jt * tx / b.mass; b.vy += jt * ty / b.mass;
   b.omega += jt * b.r / b.inertia;
 
-  // conveyor: drag toward target surface velocity along wall's (x1→x2) tangent
   if (wall.conveyorV) {
     const wlen = Math.sqrt(wlen2);
     const btx = wx / wlen, bty = wy / wlen;
@@ -141,10 +145,13 @@ export function collideWall(b, wall) {
     b.vx += btx * diff * grip;
     b.vy += bty * diff * grip;
     b.omega += diff * grip * 0.01;
+    wake(b);
   }
 
   const heatGain = Math.abs(jt) * 0.00007;
   b.heat = Math.min(1, b.heat + heatGain);
+
+  wake(b);
 
   const mag = Math.abs(vn) * b.mass;
   if (mag > 5) {
@@ -182,6 +189,8 @@ export function collidePeg(b, peg) {
   jt = clamp(jt, -maxJ, maxJ);
   b.vx += jt * tx; b.vy += jt * ty;
   b.omega += jt * b.r / b.inertia * b.mass;
+
+  wake(b);
 
   const mag = Math.abs(vn) * b.mass;
   if (mag > 4) {

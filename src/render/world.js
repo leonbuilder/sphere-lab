@@ -222,17 +222,36 @@ export function drawSolarCenter(tx) {
   tx.fill();
 }
 
+/**
+ * Soft floor shadows — rendered with a canvas filter blur so they read as
+ * penumbra, not a sharp ellipse. Three stacked ellipses: the umbra (darkest,
+ * smallest), a mid band, and a wide penumbra. Distance softens + spreads.
+ */
 export function drawBallShadows(tx) {
   if (!PHYS.shadow || !PHYS.gravityOn) return;
   const floorY = W.ch - 40;
+  tx.save();
+  tx.filter = 'blur(3px)';
   for (const b of balls) {
     const dist = floorY - (b.y + b.r);
     if (dist < 0 || dist > 300) continue;
-    const spread = 1 + dist / 110;
-    const alpha = 0.4 * (1 - dist / 300);
-    tx.fillStyle = `rgba(0,0,0,${alpha})`;
+    // distance-based: the higher the ball, the wider + fainter the shadow
+    const t = dist / 300;
+    const spread = 1 + t * 1.6;
+    const alpha = 0.42 * (1 - t);
+    // 3-layer shadow: umbra → mid → penumbra
+    tx.fillStyle = `rgba(0,0,0,${alpha * 0.7})`;
     tx.beginPath();
-    tx.ellipse(b.x, floorY, b.r * spread, b.r * 0.3 * spread, 0, 0, TAU);
+    tx.ellipse(b.x, floorY, b.r * spread * 0.8, b.r * 0.24 * spread, 0, 0, TAU);
+    tx.fill();
+    tx.fillStyle = `rgba(0,0,0,${alpha * 0.4})`;
+    tx.beginPath();
+    tx.ellipse(b.x, floorY, b.r * spread * 1.15, b.r * 0.32 * spread, 0, 0, TAU);
+    tx.fill();
+    tx.fillStyle = `rgba(0,0,0,${alpha * 0.18})`;
+    tx.beginPath();
+    tx.ellipse(b.x, floorY, b.r * spread * 1.7, b.r * 0.45 * spread, 0, 0, TAU);
     tx.fill();
   }
+  tx.restore();
 }

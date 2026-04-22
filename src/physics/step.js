@@ -1,11 +1,22 @@
 /**
- * Fixed-timestep physics integration. Called by `loop.js` at 240 Hz.
+ * Fixed-timestep physics integration. Called by `loop.js` at 240 Hz via an
+ * accumulator.
+ *
+ * Drag: `F_drag = (k_lin + k_quad · |v|) · A · v` where A = π·r². A larger
+ * ball has more cross-section and feels more air resistance — small balls
+ * dart, bowling balls plough.
+ *
+ * Magnus: `F⊥ ∝ ω · v · A`. Same scaling — larger balls curve more.
+ *
+ * Sleep: after `SLEEP_DELAY` seconds of resting motion under gravity, a
+ * ball goes to sleep (skips integration + collision iteration). Any contact
+ * or tool interaction wakes it via `wake(b)`.
  */
 
 import { W } from '../core/world.js';
 import { PHYS } from '../core/config.js';
 import { clamp, lerp, len, rand, pick } from '../core/math.js';
-import { balls, Ball } from '../entities/ball.js';
+import { balls, Ball, wake, SLEEP_DELAY, SLEEP_V, SLEEP_W } from '../entities/ball.js';
 import { MATERIALS, MAT_KEYS } from '../entities/materials.js';
 import { particles, spawnHeatShimmer } from '../entities/particles.js';
 import { collideBalls, collideWall, collidePeg } from './collisions.js';
@@ -15,8 +26,10 @@ import { buildPairs } from './broadphase.js';
 import { mouse } from '../input/mouse.js';
 import { getTool } from '../input/tools.js';
 
+/** Reference cross-section: a 20 px radius ball (= the default spawn radius). */
+const REF_AREA = Math.PI * 20 * 20;
+
 export function physicsStep(dt) {
-  // rain / galton drip
   if (W.rainSpawn && Math.random() < 0.1 && balls.length < 200) {
     const mat = MATERIALS[pick(MAT_KEYS)];
     const b = new Ball(rand(W.cw * 0.1, W.cw * 0.9), 60, rand(7, 16), mat);
@@ -30,18 +43,31 @@ export function physicsStep(dt) {
 
   const TOOL = getTool();
 
+  // wake balls the user is actively interacting with
+  if (mouse.down && (TOOL === 'push' || TOOL === 'attract' || TOOL === 'heat')) {
+    const r2 = TOOL === 'attract' ? 300*300 : TOOL === 'push' ? 200*200 : 100*100;
+    for (const b of balls) {
+      const dx = b.x - mouse.wx, dy = b.y - mouse.wy;
+      if (dx*dx + dy*dy < r2) wake(b);
+    }
+  }
+
   for (const b of balls) {
     b.life += dt;
     b.squash = lerp(b.squash, 1, clamp(dt * 20, 0, 1));
     b.heat *= 0.996;
-    if (b.heat > 0.3) spawnHeatShimmer(b.x, b.y - b.r, b.heat);
+    if (b.heat > 0.3) { spawnHeatShimmer(b.x, b.y - b.r, b.heat); wake(b); }
 
     if (b.pinned) { b.vx = b.vy = b.omega = 0; continue; }
 
     if (b.grabbed) {
+      wake(b);
       b.vx = (mouse.wx - b.x) * 25 - b.vx * 8 * dt;
       b.vy = (mouse.wy - b.y) * 25 - b.vy * 8 * dt;
     }
+
+    // sleeping balls still get squash tweened + heat decay but skip dynamics.
+    if (b.sleeping) continue;
 
     if (PHYS.gravityOn) b.vy += PHYS.gravity * dt;
     if (PHYS.wind)      b.vx += PHYS.wind * dt;
@@ -50,7 +76,6 @@ export function physicsStep(dt) {
     applySolar(b, dt);
     applyBuoyancy(b, dt);
 
-    // push tool — radial repel inside 200px
     if (mouse.down && TOOL === 'push') {
       const dx = b.x - mouse.wx, dy = b.y - mouse.wy;
       const d2 = dx * dx + dy * dy;
@@ -61,8 +86,6 @@ export function physicsStep(dt) {
         b.vy += dy / d * f * dt;
       }
     }
-    // attract tool — radial pull inside 300px, with a minimum radius so balls
-    // don't get infinite acceleration at the cursor
     if (mouse.down && TOOL === 'attract') {
       const dx = mouse.wx - b.x, dy = mouse.wy - b.y;
       const d2 = dx * dx + dy * dy;
@@ -79,16 +102,17 @@ export function physicsStep(dt) {
       if (dx * dx + dy * dy < 100 * 100) b.heat = Math.min(1, b.heat + dt * 3);
     }
 
-    // quadratic drag
+    // drag scales with cross-sectional area — big balls feel heavy air
     const vmag = len(b.vx, b.vy);
-    const dragK = PHYS.drag * (1 + vmag * 0.0018);
+    const areaScale = b.area / REF_AREA;
+    const dragK = PHYS.drag * areaScale * (1 + vmag * 0.0018);
     const dragFactor = Math.max(0, 1 - dragK * dt);
     b.vx *= dragFactor; b.vy *= dragFactor;
-    b.omega *= Math.max(0, 1 - PHYS.drag * dt * 0.8);
+    b.omega *= Math.max(0, 1 - PHYS.drag * areaScale * dt * 0.8);
 
-    // Magnus with velocity snapshot
+    // Magnus: F⊥ = k · ω · v · A. Velocity snapshot to avoid self-contamination.
     if (vmag > 10 && Math.abs(b.omega) > 0.1) {
-      const magK = PHYS.magnus * 0.002;
+      const magK = PHYS.magnus * 0.002 * areaScale;
       const mvx = -b.vy * b.omega * magK * dt;
       const mvy =  b.vx * b.omega * magK * dt;
       b.vx += mvx;
@@ -124,9 +148,13 @@ export function physicsStep(dt) {
     }
   }
 
+  // springs + pendulum tethers — springs wake their endpoints
   const springIters = W.springs.length > 200 ? 3 : 6;
   for (let i = 0; i < springIters; i++) {
-    for (const s of W.springs) s.solve(dt / springIters * 4);
+    for (const s of W.springs) {
+      wake(s.a); wake(s.b);
+      s.solve(dt / springIters * 4);
+    }
     for (const c of W.constraints) {
       if (!c.a || c.a.pinned) continue;
       const a = c.a;
@@ -135,6 +163,7 @@ export function physicsStep(dt) {
       const nx = dx / d, ny = dy / d;
       const corr = d - c.len;
       if (Math.abs(corr) < 0.001) continue;
+      wake(a);
       a.x -= nx * corr;
       a.y -= ny * corr;
       const vn = a.vx * nx + a.vy * ny;
@@ -152,9 +181,24 @@ export function physicsStep(dt) {
     }
   }
 
+  // sleep bookkeeping — must come AFTER integration + solver
+  for (const b of balls) {
+    if (b.pinned || b.grabbed) { b.sleeping = false; b.restTime = 0; continue; }
+    if (b.isResting()) {
+      b.restTime += dt;
+      if (b.restTime > SLEEP_DELAY) {
+        b.sleeping = true;
+        b.vx = 0; b.vy = 0; b.omega = 0;
+      }
+    } else {
+      b.restTime = 0;
+      b.sleeping = false;
+    }
+  }
+
+  // particles
   for (const p of particles) {
     p.life -= dt;
-    // rings don't move; sparks + smoke do
     if (p.type !== 'ring') {
       p.x += p.vx * dt;
       p.y += p.vy * dt;

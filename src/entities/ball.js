@@ -1,64 +1,70 @@
 /**
  * Ball entity — the principal simulation object.
  *
- * Mass scales with area (r²) and material density. Moment of inertia uses
- * the solid-disk formula I = ½ m r². Rendering reads `squash`/`squashAng`
- * (impulsive deformation) and `heat` (glow + color shift).
+ * Mass scales with area (r²·density). Moment of inertia uses the disk formula
+ * I = ½·m·r² (we treat each ball as a 2D disk, which is what gets rendered).
+ *
+ * Sleeping: balls with near-zero kinetic energy for longer than `SLEEP_DELAY`
+ * get `sleeping = true` and are skipped by the integrator. Contact wakes them
+ * via `wake(b)` in collisions; any user tool also wakes on grab/pin/heat.
  */
 
-import { TAU, rand } from '../core/math.js';
+import { TAU, rand, len } from '../core/math.js';
 import { mix } from '../core/color.js';
 import { PHYS } from '../core/config.js';
 import { MATERIALS } from './materials.js';
 
 let BID = 0;
 
-/**
- * @typedef {Object} TrailPoint
- * @property {number} x @property {number} y
- */
+/** After this many seconds of near-stillness + gravity-resting, sleep. */
+export const SLEEP_DELAY = 0.5;
+/** Linear speed below which a ball counts as "resting" for sleep purposes. */
+export const SLEEP_V  = 6;
+/** Angular speed below which a ball counts as "resting" for sleep purposes. */
+export const SLEEP_W  = 0.8;
 
 export class Ball {
-  /**
-   * @param {number} x
-   * @param {number} y
-   * @param {number} r  radius in world units (px)
-   * @param {import('./materials.js').Material} mat
-   */
+  /** @param {number} x @param {number} y @param {number} r @param {import('./materials.js').Material} mat */
   constructor(x, y, r, mat) {
     this.id = ++BID;
     this.x = x; this.y = y;
-    /** previous-frame position — used by buoyancy splash detection */
     this.px = x; this.py = y;
     this.vx = 0; this.vy = 0;
     this.r = r;
     this.mat = mat;
     this.mass = r * r * mat.density * 0.001;
     this.inertia = 0.5 * this.mass * r * r;
+    /** Cross-sectional area (πr²) — used by drag + Magnus for physical scaling. */
+    this.area = Math.PI * r * r;
     this.angle = rand(0, TAU);
     this.omega = 0;
     this.grabbed = false;
     this.pinned = false;
     this.life = 0;
-    /** Squash factor: 1 = round, <1 = compressed along `squashAng`. */
     this.squash = 1;
     this.squashAng = 0;
     this.trailT = 0;
-    /** @type {TrailPoint[]} */ this.trail = [];
-    /** 0..1 temperature; decays by 0.996× per step. */
+    /** @type {{x:number,y:number}[]} */ this.trail = [];
     this.heat = 0;
-    /** -1..1 electrostatic charge (weak Coulomb interaction in collisions). */
     this.charge = 0;
     this.sparkT = 0;
+
+    /** Sleep state. `sleeping === true` skips most of the per-step work. */
+    this.sleeping = false;
+    /** Accumulator — how long we've been "resting". Reset on meaningful motion. */
+    this.restTime = 0;
   }
 
-  /** ½ m v² + ½ I ω² */
   kineticEnergy() {
     return 0.5 * this.mass * (this.vx * this.vx + this.vy * this.vy)
          + 0.5 * this.inertia * this.omega * this.omega;
   }
 
-  /** Render-time color, shifted toward orange/red with heat. */
+  /** Is this ball momentarily "resting" by velocity alone (regardless of sleep state). */
+  isResting() {
+    return len(this.vx, this.vy) < SLEEP_V && Math.abs(this.omega) < SLEEP_W;
+  }
+
   effectiveColor() {
     let c = this.mat.color;
     if (PHYS.heatFx && this.heat > 0.05) c = mix(c, '#ffc040', Math.min(1, this.heat));
@@ -67,18 +73,25 @@ export class Ball {
   }
 }
 
-/** Global ball pool. Mutated by scenes, the solver, and input handlers. */
+/** Wake a sleeping ball. Cheap no-op for awake balls. */
+export function wake(b) {
+  if (b.sleeping) {
+    b.sleeping = false;
+    b.restTime = 0;
+  }
+}
+
+/** Wake every ball in the pool. Use when global physics state changes
+ *  (gravity toggled, scene reloaded, big slider change). */
+export function wakeAll() {
+  for (const b of balls) wake(b);
+}
+
 /** @type {Ball[]} */
 export const balls = [];
 
-/**
- * Currently-selected spawn material, as a key into MATERIALS. Mutated by the
- * sidebar palette and the 1..9 hotkeys. Held in a single-element object so
- * other modules can read `selectedMat.id` without stale bindings.
- */
 export const selectedMat = { id: /** @type {import('./materials.js').MaterialId} */ ('rubber') };
 
-/** Capped spawn to keep the O(n²)-ish AO + solver tractable. */
 export function spawnBall(x, y) {
   if (balls.length > 260) return null;
   const mat = MATERIALS[selectedMat.id];

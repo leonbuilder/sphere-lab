@@ -926,3 +926,24 @@ html[data-theme="forest"] {
   font-size: 11px;
   justify-content: center;
 }
+
+/* =========================================================================
+   SCENE FADE OVERLAY — covers the screen in the background color on scene load
+   and fades back in ~350 ms. Hides the first-frame jump when geometry rebuilds.
+   ========================================================================= */
+
+.scene-fade {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-0);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 10;
+}
+.scene-fade.fading {
+  animation: scene-fade 0.35s ease;
+}
+@keyframes scene-fade {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}

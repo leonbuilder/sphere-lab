@@ -82,6 +82,8 @@ index.html
 
 - Impulse-based collisions with separate normal + tangential passes.
 - `I = ½ m r²` (solid disk) feeds rotational response to friction.
+- **Restitution combines as `min(eA, eB)`** — the softer material dominates,
+  matches experiment better than an arithmetic average.
 - **Velocity-dependent restitution** (`materialMods.js::velRestScale`) makes
   hard impacts lose more energy than gentle ones.
 - **Temperature effects** (`materialMods.js::heatRestMod / heatFricMod`) —
@@ -90,27 +92,46 @@ index.html
 - **Rolling enhancement** — wall friction is 1.6× when |vₙ| < 80 to damp
   jitter so balls settle instead of buzzing.
 - **CCD:** each ball's motion is substepped so |Δx per step| < 0.6·r.
-- **Magnus effect** uses a velocity snapshot to avoid self-mutation bugs
-  (`F⊥ = k·ω·v` projected perpendicular to v).
+- **Magnus** uses a velocity snapshot and scales by cross-sectional area
+  `A = π r²` — big balls curve more (correct Magnus scaling in 2D).
+- **Drag** is `k_lin + k_quad·|v|`, scaled by `A/A_ref` — big balls feel
+  heavier air resistance.
 - **Broadphase:** uniform spatial hash with cell = max(40, 2.2·maxR).
   Emits pairs from a cell plus 4 forward-directional neighbors (no dupes).
 - **Buoyancy:** Archimedes — `F = ρ_fluid · V_sub · g`, with `ρ_fluid = 1.0`.
+- **Sleeping:** balls with `|v| < 6` and `|ω| < 0.8` for `0.5 s` go to sleep
+  (skip force integration + CCD). Woken by contact (collisions.js), tool
+  interaction, spring force, magnetism, or gravity toggle.
 
 ## Render pipeline (per frame, in order)
 
 1. `canvas.clear + drawBackground` (or motion-blur translucent fill).
 2. Apply camera transform.
-3. `drawSolarCenter → drawWalls → drawPegs → drawConstraints → drawSprings
-    → drawVortex → drawBallShadows`.
+3. `drawSolarCenter → drawWalls → drawPegs → drawFlippers → drawConstraints
+    → drawSprings → drawVortex → drawBallShadows`.
 4. If any refractive ball is onscreen: snapshot the current paint into
    `sceneCanvas` — used as the glass lens texture.
 5. `drawTrail → drawAO → drawBall (per ball) → drawWater → drawParticles
     → drawLensFlares`.
-6. Tool previews (slingshot, wall draft, link ghost, push radius, grab line).
+6. Tool previews (slingshot, wall draft, link ghost, push / attract radius).
 7. Pop camera transform.
-8. `doBloomPass` (half-res glow buffer composited additively).
+8. `doBloomPass` — **two-pass** (bright threshold → H blur → V blur →
+   additive composite).
 9. `doPostFX` (chromatic aberration + film grain).
-10. HUD text update.
+10. HUD text + inspector + scene title update.
+
+### Ball shader
+- Chromatic refraction (R/G/B sampled at slightly different scales) for glass.
+- Radial body gradient, branched by `material.metallic`.
+- Fresnel-style concentric rim highlight (edge brighter, metals stronger).
+- Faux metallic env — horizontal sky/horizon/ground bands for `metallic > 0.5`.
+- Primary + secondary specular highlights driven by light direction.
+- Rotation markers (twin dots) so spin is visible.
+- Sleeping balls show a small `z` when `PHYS.showVec` is on.
+
+### Shadows
+- Three-layer blurred ground shadow (umbra / mid / penumbra) via canvas
+  `filter: blur(3px)` — reads as real penumbra instead of a sharp ellipse.
 
 ## Conventions
 

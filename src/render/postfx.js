@@ -1,24 +1,24 @@
 /**
  * Post-processing pipeline.
  *
- *   doBloomPass()  — half-res glow buffer, blurred with canvas `filter`,
- *                    composited additively over the main canvas
- *   doPostFX()     — chromatic aberration (red/blue radial tint) + film grain
- *                    tile panned each frame
+ *   doBloomPass() — half-res bright-pass (material glow > threshold), then a
+ *                   horizontal blur, then a vertical blur, then composited
+ *                   additively. Two passes give a softer, wider bloom than a
+ *                   single blur; splitting H/V is cheaper than a 2D blur.
+ *   doPostFX()    — chromatic aberration (radial red/blue tint) + film grain.
  *
- * Call order from the loop: bloom → postfx. Each is cheap because both operate
- * at half resolution or use precomputed tiles.
+ * Call order from the loop: bloom → postfx.
  */
 
 import { W } from '../core/world.js';
 import { PHYS } from '../core/config.js';
 import { TAU, clamp, len } from '../core/math.js';
-import { mix } from '../core/color.js';
+import { mix, withAlpha } from '../core/color.js';
 import { balls } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
 import { canvas, ctx, dpr, bloomCanvas, bloomCtx } from './canvas.js';
 
-/* ---------------------- film grain tile (precomputed) ---------------------- */
+/* ---------------------- film grain (precomputed noise tile) ---------------------- */
 const grainCanvas = document.createElement('canvas');
 const grainCtx = grainCanvas.getContext('2d');
 let grainT = 0;
@@ -35,8 +35,11 @@ function buildGrain() {
 }
 buildGrain();
 
+/* Second offscreen used for the second blur pass. Same size as bloomCanvas. */
+const bloomPass2 = document.createElement('canvas');
+const bloomPass2Ctx = bloomPass2.getContext('2d');
+
 export function doPostFX() {
-  // chromatic aberration — radial red/blue tint, strength scales with avg speed
   if (PHYS.aberration) {
     const avgSpeed = balls.length ? balls.reduce((s, b) => s + len(b.vx, b.vy), 0) / balls.length : 0;
     const strength = clamp(1 + avgSpeed * 0.003, 1, 3.5);
@@ -56,7 +59,6 @@ export function doPostFX() {
     ctx.restore();
   }
 
-  // grain
   if (PHYS.grain) {
     grainT += 0.04;
     ctx.save();
@@ -74,32 +76,41 @@ export function doPostFX() {
 }
 
 /**
- * Half-resolution bright-pass into bloomCanvas, blur it via `filter`, then
- * composite additively. `canvas.filter = 'blur(...)'` is hardware-accelerated
- * and much cheaper than a hand-rolled convolution.
+ * Bloom as three sequential passes:
+ *   1. Bright pass: draw glowing sources into bloomCanvas (half-res, black bg).
+ *   2. Horizontal blur: filter 10px H → bloomPass2.
+ *   3. Vertical blur: filter 10px V from bloomPass2 → bloomCanvas.
+ *   Finally, composite bloomCanvas additively onto the main canvas.
  */
 export function doBloomPass() {
   if (!PHYS.bloom) return;
 
+  // keep pass2 sized with bloom
+  if (bloomPass2.width !== bloomCanvas.width || bloomPass2.height !== bloomCanvas.height) {
+    bloomPass2.width  = bloomCanvas.width;
+    bloomPass2.height = bloomCanvas.height;
+  }
+
+  // --- 1. bright pass ---
   bloomCtx.setTransform(0.5, 0, 0, 0.5, 0, 0);
   bloomCtx.fillStyle = '#000';
   bloomCtx.fillRect(0, 0, W.cw, W.ch);
+  bloomCtx.globalCompositeOperation = 'source-over';
 
-  // glowing balls
+  const THRESHOLD = 0.15;
   for (const b of balls) {
     const glowAmt = Math.max(b.mat.glow || 0, b.heat * 0.9);
-    if (glowAmt < 0.15) continue;
+    if (glowAmt < THRESHOLD) continue;
     const r = b.r * (2 + glowAmt);
     const c = PHYS.heatFx && b.heat > 0.3 ? mix(b.mat.color, '#ff6020', b.heat) : b.mat.color;
     const g = bloomCtx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
-    g.addColorStop(0,   c + 'ff');
-    g.addColorStop(0.3, c + '88');
-    g.addColorStop(1,   c + '00');
+    g.addColorStop(0,   withAlpha(c, 1.0));
+    g.addColorStop(0.3, withAlpha(c, 0.53));
+    g.addColorStop(1,   withAlpha(c, 0));
     bloomCtx.fillStyle = g;
     bloomCtx.beginPath(); bloomCtx.arc(b.x, b.y, r, 0, TAU); bloomCtx.fill();
   }
 
-  // spark particles
   for (const p of particles) {
     if (p.type !== 'spark') continue;
     bloomCtx.globalAlpha = p.life / p.maxLife;
@@ -110,7 +121,6 @@ export function doBloomPass() {
   }
   bloomCtx.globalAlpha = 1;
 
-  // pinball bumpers
   for (const p of W.pegs) {
     if (!p.bumper) continue;
     const g = bloomCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 2);
@@ -120,7 +130,6 @@ export function doBloomPass() {
     bloomCtx.beginPath(); bloomCtx.arc(p.x, p.y, p.r * 2, 0, TAU); bloomCtx.fill();
   }
 
-  // sun
   if (W.solar) {
     const cx = W.cw / 2, cy = W.ch / 2;
     const g = bloomCtx.createRadialGradient(cx, cy, 0, cx, cy, 200);
@@ -131,16 +140,25 @@ export function doBloomPass() {
     bloomCtx.beginPath(); bloomCtx.arc(cx, cy, 200, 0, TAU); bloomCtx.fill();
   }
 
-  // blur in-place (draws back into itself at full scale)
+  // --- 2. horizontal blur: bloomCanvas → pass2 ---
   bloomCtx.setTransform(1, 0, 0, 1, 0, 0);
-  bloomCtx.filter = 'blur(14px)';
-  bloomCtx.drawImage(bloomCanvas, 0, 0);
+  bloomPass2Ctx.setTransform(1, 0, 0, 1, 0, 0);
+  bloomPass2Ctx.clearRect(0, 0, bloomPass2.width, bloomPass2.height);
+  // canvas filter property — H blur only
+  bloomPass2Ctx.filter = 'blur(10px)';
+  bloomPass2Ctx.drawImage(bloomCanvas, 0, 0);
+  bloomPass2Ctx.filter = 'none';
+
+  // --- 3. vertical blur: pass2 → bloomCanvas (composited) ---
+  bloomCtx.clearRect(0, 0, bloomCanvas.width, bloomCanvas.height);
+  bloomCtx.filter = 'blur(10px)';
+  bloomCtx.drawImage(bloomPass2, 0, 0);
   bloomCtx.filter = 'none';
 
-  // additive composite
+  // --- 4. composite additively onto main canvas ---
   ctx.save();
   ctx.globalCompositeOperation = 'lighter';
-  ctx.globalAlpha = 0.9;
+  ctx.globalAlpha = 0.95;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.drawImage(bloomCanvas, 0, 0, W.cw, W.ch);
   ctx.restore();
