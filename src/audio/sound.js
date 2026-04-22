@@ -117,140 +117,180 @@ const MODAL = {
     attack: { type: 'highpass', freq: 5000, dur: 0.014, amp: 0.55, velHpScale: 0.55 },
     reverbSend: 0.42
   },
-  // Rubber — almost entirely damping. Short low thud, single weak body mode.
+  // Rubber — almost entirely damped. A deep boomy thud plus a tiny higher
+  // skin-slap ping. No sustained ring (hysteresis dissipates the energy
+  // in the first few cycles). Low-pass attack models the "fwump" of the
+  // contact deforming a soft skin.
   RUBBER: {
-    resonance: 0.18,
-    baseFreq: 140,
-    sizeExp: 0.8,
+    resonance: 0.22,
+    baseFreq: 120,
+    sizeExp: 0.85,
     modes: [
-      { ratio: 1.000, amp: 0.80, decay: 0.07 },
-      { ratio: 2.3,   amp: 0.25, decay: 0.04 }
+      { ratio: 1.000, amp: 0.95, decay: 0.11 },
+      { ratio: 1.88,  amp: 0.42, decay: 0.06 },
+      { ratio: 3.10,  amp: 0.16, decay: 0.03 }
     ],
-    attack: { type: 'lowpass', freq: 780, dur: 0.075, amp: 0.85 },
-    reverbSend: 0.05
+    attack: { type: 'lowpass', freq: 680, dur: 0.065, amp: 0.90 },
+    reverbSend: 0.04
   },
   // Glass — brittle bell. Bright click, high sparse modes, fast decay.
+  // Two-stage attack: sharp unfiltered tick, then the filtered ring-up.
+  // Decays bumped — real glass rings briefly even on a soft tap.
   GLASS: {
     resonance: 1.00,
     baseFreq: 3500,
     sizeExp: 1.1,
     modes: [
-      { ratio: 1.000, amp: 1.00, decay: 0.28 },
-      { ratio: 1.94,  amp: 0.78, decay: 0.22 },
-      { ratio: 2.88,  amp: 0.55, decay: 0.18 },
-      { ratio: 3.82,  amp: 0.38, decay: 0.14 },
-      { ratio: 4.76,  amp: 0.24, decay: 0.11 },
-      { ratio: 5.70,  amp: 0.14, decay: 0.09 }
+      { ratio: 1.000, amp: 1.00, decay: 0.42 },
+      { ratio: 1.94,  amp: 0.80, decay: 0.32 },
+      { ratio: 2.88,  amp: 0.58, decay: 0.24 },
+      { ratio: 3.82,  amp: 0.40, decay: 0.18 },
+      { ratio: 4.76,  amp: 0.26, decay: 0.14 },
+      { ratio: 5.70,  amp: 0.16, decay: 0.10 }
     ],
-    attack: { type: 'highpass', freq: 8000, dur: 0.008, amp: 0.45 },
-    reverbSend: 0.40
+    onset:  { dur: 0.0010, amp: 0.36 },
+    attack: { type: 'highpass', freq: 7000, dur: 0.010, amp: 0.48, velHpScale: 0.50 },
+    reverbSend: 0.45
   },
-  // Bowling ball — dense damped polymer. Deep low thud, three modes only.
+  // Bowling ball — dense polyurethane over a heavy core. Deep low thud
+  // with a bit more body than pure rubber — the hard shell rings briefly
+  // even as the core absorbs. Four modes give it a denser thunk.
   BOWLING: {
-    resonance: 0.45,
-    baseFreq: 90,
+    resonance: 0.55,
+    baseFreq: 95,
     sizeExp: 0.9,
     modes: [
-      { ratio: 1.000, amp: 1.00, decay: 0.24 },
-      { ratio: 2.20,  amp: 0.45, decay: 0.16 },
-      { ratio: 3.70,  amp: 0.18, decay: 0.10 }
+      { ratio: 1.000, amp: 1.00, decay: 0.40 },
+      { ratio: 2.20,  amp: 0.48, decay: 0.24 },
+      { ratio: 3.70,  amp: 0.22, decay: 0.14 },
+      { ratio: 5.20,  amp: 0.10, decay: 0.09 }
     ],
-    attack: { type: 'lowpass', freq: 320, dur: 0.065, amp: 0.55 },
-    reverbSend: 0.10
+    attack: { type: 'lowpass', freq: 360, dur: 0.055, amp: 0.62 },
+    reverbSend: 0.14
   },
-  // Neon — light plastic. Mid fundamentals, short modes, soft onset.
+  // Neon — light acrylic shell enclosing glow gas. Mid fundamentals with
+  // a slightly hollow character (thin wall). Onset is soft but present
+  // — the shell ticks on contact before the gas interior can dampen.
   NEON: {
-    resonance: 0.50,
+    resonance: 0.55,
     baseFreq: 900,
     sizeExp: 1.0,
     modes: [
-      { ratio: 1.000, amp: 0.90, decay: 0.14 },
-      { ratio: 1.60,  amp: 0.50, decay: 0.10 },
-      { ratio: 2.40,  amp: 0.25, decay: 0.07 }
+      { ratio: 1.000, amp: 0.92, decay: 0.22 },
+      { ratio: 1.60,  amp: 0.55, decay: 0.15 },
+      { ratio: 2.40,  amp: 0.28, decay: 0.10 },
+      { ratio: 3.35,  amp: 0.14, decay: 0.07 }
     ],
-    attack: { type: 'lowpass', freq: 2000, dur: 0.015, amp: 0.42 },
-    reverbSend: 0.15
+    onset:  { dur: 0.0018, amp: 0.22 },
+    attack: { type: 'lowpass', freq: 2400, dur: 0.014, amp: 0.44, velHpScale: 0.25 },
+    reverbSend: 0.18
   },
-  // Gold — soft dense metal. Warmer and lower than steel, long sustain.
+  // Gold — soft dense metal (Mohs 2.5). Warm, low fundamental that rings
+  // like a gong. Onset click is duller than steel because the contact
+  // plasticizes immediately — the high-frequency spectrum is suppressed.
+  // Low modes persist for seconds on a real gold bar; we lean into that.
   GOLD: {
-    resonance: 0.90,
-    baseFreq: 560,
+    resonance: 0.92,
+    baseFreq: 540,
     sizeExp: 1.0,
     modes: [
-      { ratio: 1.000, amp: 1.00, decay: 0.80 },
-      { ratio: 1.62,  amp: 0.60, decay: 0.62 },
-      { ratio: 2.28,  amp: 0.40, decay: 0.48 },
-      { ratio: 2.97,  amp: 0.25, decay: 0.35 },
-      { ratio: 3.71,  amp: 0.16, decay: 0.26 }
+      { ratio: 1.000, amp: 1.00, decay: 1.80 },
+      { ratio: 1.62,  amp: 0.62, decay: 1.20 },
+      { ratio: 2.28,  amp: 0.42, decay: 0.85 },
+      { ratio: 2.97,  amp: 0.26, decay: 0.55 },
+      { ratio: 3.71,  amp: 0.16, decay: 0.38 },
+      { ratio: 4.43,  amp: 0.10, decay: 0.26 }
     ],
-    attack: { type: 'highpass', freq: 4000, dur: 0.012, amp: 0.38 },
-    reverbSend: 0.30
+    onset:  { dur: 0.0020, amp: 0.25 },
+    attack: { type: 'highpass', freq: 3200, dur: 0.018, amp: 0.42, velHpScale: 0.35 },
+    reverbSend: 0.38
   },
   // Plasma — sci-fi: two beating modes near each other + bright overtones.
+  // Keeps its signature warble, but now with a sharp onset tick for the
+  // dielectric-snap character of plasma arcs making contact.
   PLASMA: {
-    resonance: 0.40,
+    resonance: 0.45,
     baseFreq: 380,
     sizeExp: 0.9,
     modes: [
-      { ratio: 1.000, amp: 0.85, decay: 0.12 },
-      { ratio: 1.042, amp: 0.85, decay: 0.12 },   // ~16 Hz beat with the fundamental
-      { ratio: 5.10,  amp: 0.40, decay: 0.07 },
-      { ratio: 8.30,  amp: 0.22, decay: 0.05 }
+      { ratio: 1.000, amp: 0.88, decay: 0.18 },
+      { ratio: 1.042, amp: 0.88, decay: 0.18 },   // ~16 Hz beat with the fundamental
+      { ratio: 5.10,  amp: 0.44, decay: 0.09 },
+      { ratio: 8.30,  amp: 0.26, decay: 0.06 },
+      { ratio: 11.40, amp: 0.14, decay: 0.04 }    // ultrasonic shimmer
     ],
-    attack: { type: 'highpass', freq: 5000, dur: 0.022, amp: 0.55 },
-    reverbSend: 0.20
+    onset:  { dur: 0.0010, amp: 0.30 },
+    attack: { type: 'highpass', freq: 5000, dur: 0.022, amp: 0.58, velHpScale: 0.40 },
+    reverbSend: 0.24
   },
-  // Ice — crystalline. Very bright click, sharp ephemeral modes.
+  // Ice — crystalline. Very bright click, sharp ephemeral modes. The
+  // internal lattice has lots of micro-cracks that damp ringing fast;
+  // even pristine ice rings for less than a glass sphere of same size.
   ICE: {
     resonance: 0.95,
     baseFreq: 1700,
     sizeExp: 1.0,
     modes: [
-      { ratio: 1.000, amp: 1.00, decay: 0.15 },
-      { ratio: 1.41,  amp: 0.60, decay: 0.11 },
-      { ratio: 2.12,  amp: 0.38, decay: 0.08 },
-      { ratio: 2.82,  amp: 0.22, decay: 0.06 }
+      { ratio: 1.000, amp: 1.00, decay: 0.22 },
+      { ratio: 1.41,  amp: 0.62, decay: 0.15 },
+      { ratio: 2.12,  amp: 0.40, decay: 0.10 },
+      { ratio: 2.82,  amp: 0.22, decay: 0.07 },
+      { ratio: 3.60,  amp: 0.12, decay: 0.05 }
     ],
-    attack: { type: 'highpass', freq: 9000, dur: 0.018, amp: 0.62 },
-    reverbSend: 0.35
+    onset:  { dur: 0.0012, amp: 0.38 },
+    attack: { type: 'highpass', freq: 8500, dur: 0.016, amp: 0.58, velHpScale: 0.45 },
+    reverbSend: 0.38
   },
-  // Magnet — ferromagnetic steel cousin. Darker + damper than steel.
+  // Magnet — ferromagnetic steel alloy. Damper than chrome steel (magnetic
+  // domain boundary motion adds internal friction) but still metallic.
+  // Mode ratios follow the solid-sphere pattern but ring decays are
+  // roughly half of steel's. Gets the two-stage attack for a crisp click.
   MAGNET: {
-    resonance: 0.65,
+    resonance: 0.75,
     baseFreq: 1200,
     sizeExp: 1.0,
     modes: [
-      { ratio: 1.000, amp: 0.90, decay: 0.19 },
-      { ratio: 1.50,  amp: 0.55, decay: 0.14 },
-      { ratio: 2.11,  amp: 0.30, decay: 0.10 },
-      { ratio: 2.75,  amp: 0.18, decay: 0.08 }
+      { ratio: 1.000, amp: 0.95, decay: 0.70 },
+      { ratio: 1.59,  amp: 0.62, decay: 0.55 },
+      { ratio: 2.14,  amp: 0.42, decay: 0.42 },
+      { ratio: 2.65,  amp: 0.28, decay: 0.30 },
+      { ratio: 3.15,  amp: 0.18, decay: 0.22 },
+      { ratio: 3.65,  amp: 0.11, decay: 0.16 }
     ],
-    attack: { type: 'highpass', freq: 3500, dur: 0.013, amp: 0.42 },
-    reverbSend: 0.20
+    onset:  { dur: 0.0016, amp: 0.34 },
+    attack: { type: 'highpass', freq: 4200, dur: 0.014, amp: 0.48, velHpScale: 0.45 },
+    reverbSend: 0.28
   },
-  // Mercury — liquid, no tonal ring. Just a wet bandpass burst.
+  // Mercury — liquid metal. No tonal ring (no solid modes) but now with
+  // a very brief muted sub-thump underneath the splash bandpass, giving
+  // a sense of the heavy fluid displacing on contact.
   MERCURY: {
-    resonance: 0.30,
-    baseFreq: 0,
-    sizeExp: 0,
-    modes: [],
-    attack: { type: 'bandpass', freq: 1200, dur: 0.070, amp: 0.60, q: 2.4 },
-    reverbSend: 0.15
+    resonance: 0.35,
+    baseFreq: 180,
+    sizeExp: 0.7,
+    modes: [
+      { ratio: 1.000, amp: 0.45, decay: 0.06 }   // single heavy sub-thud
+    ],
+    attack: { type: 'bandpass', freq: 1200, dur: 0.070, amp: 0.62, q: 2.4 },
+    reverbSend: 0.18
   },
   // Obsidian — volcanic glass. Darker, lower fundamental than glass, fast
   // decay (internal micro-fractures damp the ring), mid-range click.
+  // Two-stage attack adds a sharp initial tick — obsidian hits crisply.
   OBSIDIAN: {
-    resonance: 0.55,
+    resonance: 0.58,
     baseFreq: 1400,
     sizeExp: 0.95,
     modes: [
-      { ratio: 1.000, amp: 1.00, decay: 0.22 },
-      { ratio: 1.76,  amp: 0.55, decay: 0.16 },
-      { ratio: 2.58,  amp: 0.32, decay: 0.11 },
-      { ratio: 3.50,  amp: 0.18, decay: 0.08 }
+      { ratio: 1.000, amp: 1.00, decay: 0.32 },
+      { ratio: 1.76,  amp: 0.58, decay: 0.22 },
+      { ratio: 2.58,  amp: 0.34, decay: 0.15 },
+      { ratio: 3.50,  amp: 0.20, decay: 0.10 },
+      { ratio: 4.40,  amp: 0.11, decay: 0.07 }
     ],
-    attack: { type: 'bandpass', freq: 2400, dur: 0.012, amp: 0.52, q: 1.6 },
-    reverbSend: 0.12
+    onset:  { dur: 0.0014, amp: 0.32 },
+    attack: { type: 'bandpass', freq: 2400, dur: 0.012, amp: 0.52, q: 1.6, velHpScale: 0.35 },
+    reverbSend: 0.16
   },
   // Diamond — crystalline but much harder + brighter than glass. Very high
   // fundamental, dense inharmonic mode stack, low internal damping so the
@@ -261,16 +301,18 @@ const MODAL = {
     baseFreq: 4500,
     sizeExp: 1.15,
     modes: [
-      { ratio: 1.000, amp: 1.00, decay: 0.62 },
-      { ratio: 1.533, amp: 0.85, decay: 0.48 },
-      { ratio: 2.142, amp: 0.68, decay: 0.38 },
-      { ratio: 2.817, amp: 0.52, decay: 0.30 },
-      { ratio: 3.544, amp: 0.38, decay: 0.24 },
-      { ratio: 4.311, amp: 0.26, decay: 0.19 },
-      { ratio: 5.116, amp: 0.17, decay: 0.15 }
+      { ratio: 1.000, amp: 1.00, decay: 0.95 },
+      { ratio: 1.533, amp: 0.88, decay: 0.72 },
+      { ratio: 2.142, amp: 0.70, decay: 0.55 },
+      { ratio: 2.817, amp: 0.54, decay: 0.42 },
+      { ratio: 3.544, amp: 0.40, decay: 0.32 },
+      { ratio: 4.311, amp: 0.28, decay: 0.25 },
+      { ratio: 5.116, amp: 0.18, decay: 0.20 },
+      { ratio: 5.900, amp: 0.12, decay: 0.16 }
     ],
-    attack: { type: 'highpass', freq: 11000, dur: 0.005, amp: 0.42 },
-    reverbSend: 0.55
+    onset:  { dur: 0.0008, amp: 0.38 },
+    attack: { type: 'highpass', freq: 10000, dur: 0.006, amp: 0.45, velHpScale: 0.60 },
+    reverbSend: 0.58
   }
 };
 
