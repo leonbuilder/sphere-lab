@@ -28,6 +28,37 @@ import { tryFracture } from './fracture.js';
 const MAX_DENTS = 9;
 /** Minimum impulse magnitude that leaves a dent on a dentable ball. */
 const DENT_THRESHOLD = 55;
+/** How many cracks a fragile ball can show. */
+const MAX_CRACKS = 7;
+/** Minimum *normal-velocity* that registers as damage on a fragile ball. */
+const CRACK_VN_THRESHOLD = 80;
+
+/**
+ * Accumulate invisible damage + a visible hairline crack on a fragile ball.
+ * Enough damage shifts the effective fracture threshold downward, so a
+ * battered glass ball can shatter on a hit that wouldn't have touched it
+ * fresh. Cracks are stored in ball-local angle space so they rotate.
+ *
+ * @param {import('../entities/ball.js').Ball} ball
+ * @param {number} worldAngle — angle from ball center to impact point
+ * @param {number} vn         — impact normal velocity (px/s)
+ */
+function addCrack(ball, worldAngle, vn) {
+  if (!ball.mat.fragile || ball.isFragment) return;
+  if (vn < CRACK_VN_THRESHOLD) return;
+  // Damage grows with (vn - threshold) so soft hits barely mark, hard hits leave deep scars.
+  const impact = (vn - CRACK_VN_THRESHOLD) / 400;
+  ball.damage = clamp(ball.damage + impact * 0.25, 0, 1);
+  // Only draw a new crack every so often — avoid cluttering the ball.
+  if (Math.random() > 0.35 + impact * 0.5) return;
+  if (!ball.cracks) ball.cracks = [];
+  if (ball.cracks.length >= MAX_CRACKS) ball.cracks.shift();
+  ball.cracks.push({
+    localAngle: worldAngle - ball.angle,
+    length: clamp(0.35 + impact * 0.9, 0.3, 1.0),
+    angle: (Math.random() - 0.5) * 1.2    // ±35° wander from radial
+  });
+}
 
 /**
  * Accumulate a permanent dent on a dentable ball (currently only gold).
@@ -235,8 +266,9 @@ export function collideBalls(a, b) {
       a.squash = 1 - Math.min(0.35 * dA, mag * 0.0025 * dA);
       a.squashAng = Math.atan2(ny, nx);
       // The impact on `a` comes from the direction of `b` → contact point on
-      // a is at (nx, ny) side. That's where the dent sits.
+      // a is at (nx, ny) side. That's where the dent / crack sits.
       addDent(a, Math.atan2(ny, nx), mag);
+      addCrack(a, Math.atan2(ny, nx), Math.abs(vn));
     }
     if (!bFractured) {
       spawnImpactFor(b.mat, hx, hy, -nx, -ny, mag);
@@ -244,6 +276,7 @@ export function collideBalls(a, b) {
       b.squash = 1 - Math.min(0.35 * dB, mag * 0.0025 * dB);
       b.squashAng = Math.atan2(-ny, -nx);
       addDent(b, Math.atan2(-ny, -nx), mag);
+      addCrack(b, Math.atan2(-ny, -nx), Math.abs(vn));
     }
     if (!aFractured && !bFractured) Snd.collision(a, b, mag, Math.abs(vn));
   }
@@ -327,10 +360,11 @@ export function collideWall(b, wall) {
     const dF = (b.mat.deform ?? 0.4);
     b.squash = 1 - Math.min(0.4 * dF, Math.abs(vn) * 0.0008 * dF);
     b.squashAng = Math.atan2(ny, nx);
-    // Dent sits on the side of the ball that actually touched the wall —
-    // that's the direction from ball center to contact point, which is
-    // opposite the outward normal (`-nx, -ny`).
+    // Dent / crack sit on the side of the ball that actually touched the
+    // wall — that's the direction from ball center to contact point,
+    // which is opposite the outward normal (`-nx, -ny`).
     addDent(b, Math.atan2(-ny, -nx), mag);
+    addCrack(b, Math.atan2(-ny, -nx), Math.abs(vn));
     Snd.wall(b, mag, Math.abs(vn));
   }
   stats.collisions++;
@@ -377,6 +411,7 @@ export function collidePeg(b, peg) {
     spawnImpactFor(b.mat, peg.x + nx * peg.r, peg.y + ny * peg.r, nx, ny, mag);
     // Contact side of the ball is opposite the outward normal from the peg.
     addDent(b, Math.atan2(-ny, -nx), mag);
+    addCrack(b, Math.atan2(-ny, -nx), Math.abs(vn));
     if (peg.bumper) {
       b.vx += nx * 500 * invMass(b);
       b.vy += ny * 500 * invMass(b);

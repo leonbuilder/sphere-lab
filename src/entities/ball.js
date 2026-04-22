@@ -75,6 +75,22 @@ export class Ball {
      *  with the ball. Lazily created on first hard hit; null until then. */
     /** @type {{localAngle:number, depth:number}[] | null} */
     this.dents = null;
+
+    /** Viscoelastic squash velocity — rubber / elastomer materials oscillate
+     *  back to 1 instead of a simple exponential recovery. Non-elastic
+     *  materials just use the direct lerp in step.js. */
+    this.squashVel = 0;
+
+    /** Fragile materials (glass, ice) accumulate damage from sub-threshold
+     *  hits; visible as hairline cracks before the main fracture event. */
+    this.damage = 0;
+    /** @type {{localAngle:number, length:number, angle:number}[] | null} */
+    this.cracks = null;
+
+    /** Magnetic polarity — +1 or -1. Opposite poles attract, same-sign
+     *  poles repel. Set at construction for magnetic balls, 0 for the
+     *  rest (they're ignored by the magnetism code anyway). */
+    this.polarity = mat.magnetic ? (Math.random() < 0.5 ? -1 : 1) : 0;
   }
 
   kineticEnergy() {

@@ -24,6 +24,171 @@ import { TAU, len } from '../core/math.js';
 import { mix, lighten, darken, withAlpha } from '../core/color.js';
 import { light, sceneCanvas } from './canvas.js';
 
+/* ------------------------------------------------------------------ */
+/*  Material surface micro-textures                                    */
+/* ------------------------------------------------------------------ */
+/* A small offscreen canvas per material, tiled across the ball body
+ * as a `createPattern` with `setTransform` so the pattern rotates with
+ * the ball. Bakes once on first use, then reused for all balls of the
+ * same material. The pattern is drawn through `overlay` blend at low
+ * alpha — preserves the radial gradient shading and highlights under
+ * it while adding per-material surface character.                     */
+const _texCache = {};
+const TEX_SIZE = 96;
+function getMatTexture(matName) {
+  const cached = _texCache[matName];
+  if (cached !== undefined) return cached;
+  const c = document.createElement('canvas');
+  c.width = TEX_SIZE; c.height = TEX_SIZE;
+  const tc = c.getContext('2d');
+  tc.clearRect(0, 0, TEX_SIZE, TEX_SIZE);
+  switch (matName) {
+    case 'STEEL': {
+      // brushed metal — dense near-horizontal scratches, light + dark mix
+      for (let y = 0; y < TEX_SIZE; y += 0.8) {
+        tc.strokeStyle = `rgba(255,255,255,${0.04 + Math.random() * 0.09})`;
+        tc.lineWidth = 0.4;
+        tc.beginPath(); tc.moveTo(0, y); tc.lineTo(TEX_SIZE, y + (Math.random() - 0.5) * 0.3); tc.stroke();
+      }
+      for (let i = 0; i < 22; i++) {
+        tc.strokeStyle = `rgba(0,0,0,${0.05 + Math.random() * 0.08})`;
+        tc.lineWidth = 0.5;
+        const y = Math.random() * TEX_SIZE;
+        tc.beginPath(); tc.moveTo(0, y); tc.lineTo(TEX_SIZE, y + (Math.random() - 0.5) * 0.4); tc.stroke();
+      }
+      break;
+    }
+    case 'RUBBER': {
+      // fine dense grain
+      const imd = tc.createImageData(TEX_SIZE, TEX_SIZE);
+      for (let i = 0; i < imd.data.length; i += 4) {
+        const v = (Math.random() - 0.5) * 80;
+        imd.data[i]     = clamp255(128 + v);
+        imd.data[i + 1] = clamp255(128 + v);
+        imd.data[i + 2] = clamp255(128 + v);
+        imd.data[i + 3] = 55;
+      }
+      tc.putImageData(imd, 0, 0);
+      break;
+    }
+    case 'GLASS': {
+      // rare tiny bright specks
+      for (let i = 0; i < 8; i++) {
+        tc.fillStyle = `rgba(255,255,255,${0.35 + Math.random() * 0.4})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.5, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
+    case 'BOWLING': {
+      // colored polymer flecks
+      const cols = ['#b06030', '#70401e', '#201810', '#504030', '#c09070'];
+      for (let i = 0; i < 55; i++) {
+        tc.fillStyle = cols[Math.floor(Math.random() * cols.length)];
+        tc.globalAlpha = 0.4 + Math.random() * 0.35;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.6 + Math.random() * 1.3, 0, TAU);
+        tc.fill();
+      }
+      tc.globalAlpha = 1;
+      break;
+    }
+    case 'GOLD': {
+      // scattered light specks (glitter)
+      for (let i = 0; i < 28; i++) {
+        tc.fillStyle = `rgba(255,230,150,${0.45 + Math.random() * 0.35})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.4 + Math.random() * 0.6, 0, TAU);
+        tc.fill();
+      }
+      for (let i = 0; i < 12; i++) {
+        tc.fillStyle = `rgba(120,80,20,${0.18 + Math.random() * 0.14})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.5 + Math.random() * 0.8, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
+    case 'PLASMA': {
+      // wavy energy filaments
+      for (let i = 0; i < 7; i++) {
+        tc.strokeStyle = `rgba(240,180,255,${0.20 + Math.random() * 0.25})`;
+        tc.lineWidth = 0.5 + Math.random() * 0.4;
+        tc.beginPath();
+        const y0 = Math.random() * TEX_SIZE;
+        tc.moveTo(0, y0);
+        for (let px = 0; px <= TEX_SIZE; px += 6) {
+          tc.lineTo(px, y0 + Math.sin((px + i * 14) * 0.12) * (3 + i * 0.7));
+        }
+        tc.stroke();
+      }
+      break;
+    }
+    case 'ICE': {
+      // crystalline sparkles
+      for (let i = 0; i < 20; i++) {
+        tc.fillStyle = `rgba(220,240,255,${0.30 + Math.random() * 0.4})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.4 + Math.random() * 0.5, 0, TAU);
+        tc.fill();
+      }
+      // a few tiny hairline fractures
+      for (let i = 0; i < 3; i++) {
+        tc.strokeStyle = `rgba(255,255,255,${0.15 + Math.random() * 0.10})`;
+        tc.lineWidth = 0.4;
+        tc.beginPath();
+        const x0 = Math.random() * TEX_SIZE, y0 = Math.random() * TEX_SIZE;
+        tc.moveTo(x0, y0);
+        tc.lineTo(x0 + (Math.random() - 0.5) * 20, y0 + (Math.random() - 0.5) * 20);
+        tc.stroke();
+      }
+      break;
+    }
+    case 'NEON': {
+      // fine bright fizz
+      for (let i = 0; i < 70; i++) {
+        tc.fillStyle = `rgba(255,255,255,${0.08 + Math.random() * 0.16})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.4, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
+    case 'MAGNET': {
+      // iron filing flecks
+      for (let i = 0; i < 55; i++) {
+        tc.fillStyle = `rgba(40,14,14,${0.35 + Math.random() * 0.35})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.4 + Math.random() * 0.7, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
+    case 'MERCURY': {
+      // faint surface ripples
+      for (let i = 0; i < 5; i++) {
+        tc.strokeStyle = `rgba(200,215,225,${0.15 + Math.random() * 0.10})`;
+        tc.lineWidth = 0.4;
+        tc.beginPath();
+        const y0 = Math.random() * TEX_SIZE;
+        tc.moveTo(0, y0);
+        for (let px = 0; px <= TEX_SIZE; px += 10) {
+          tc.lineTo(px, y0 + Math.sin((px + i * 12) * 0.08) * 1.6);
+        }
+        tc.stroke();
+      }
+      break;
+    }
+    default:
+      _texCache[matName] = null;
+      return null;
+  }
+  _texCache[matName] = c;
+  return c;
+}
+function clamp255(v) { return v < 0 ? 0 : v > 255 ? 255 : v | 0; }
+
 /**
  * Glass refraction with a small chromatic split: sample sceneCanvas three
  * times at slightly different scales (R wider, B tighter) and blend via
@@ -238,6 +403,43 @@ export function drawBall(tx, b) {
   // rotation markers so spin is visible
   tx.save();
   tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
+
+  // Magnetic polarity — north/south hemispheres, rotating with the ball.
+  // Drawn BEFORE the texture overlay so the iron-filing flecks read on top.
+  if (mat.magnetic && b.polarity) {
+    const northA = b.angle + (b.polarity < 0 ? Math.PI : 0);
+    const nx_ = Math.cos(northA);
+    const ny_ = Math.sin(northA);
+    const grad = tx.createLinearGradient(x - nx_ * r, y - ny_ * r, x + nx_ * r, y + ny_ * r);
+    grad.addColorStop(0,    'rgba(50,110,255,0.42)');    // south (blue)
+    grad.addColorStop(0.42, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.58, 'rgba(255,255,255,0)');
+    grad.addColorStop(1,    'rgba(255,70,70,0.42)');     // north (red)
+    tx.fillStyle = grad;
+    tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
+  }
+
+  // Surface micro-texture — brushed-metal for steel, grain for rubber,
+  // flecks for bowling, glitter for gold, and so on. Pattern is rotated
+  // with the ball via setTransform so it reads as "baked into" the ball,
+  // not drifting over it. Overlay blend preserves highlights under it.
+  const tex = getMatTexture(mat.name);
+  if (tex) {
+    const pat = tx.createPattern(tex, 'repeat');
+    if (pat && pat.setTransform) {
+      const m = new DOMMatrix()
+        .translateSelf(x, y)
+        .rotateSelf(b.angle * 57.29578);
+      pat.setTransform(m);
+    }
+    tx.save();
+    tx.globalAlpha = 0.55;
+    tx.globalCompositeOperation = 'overlay';
+    tx.fillStyle = pat;
+    tx.fillRect(x - r, y - r, r * 2, r * 2);
+    tx.restore();
+  }
+
   const mAng = b.angle;
   for (const a of [0, Math.PI]) {
     const mx = x + Math.cos(mAng + a) * r * 0.62;
@@ -319,6 +521,43 @@ export function drawBall(tx, b) {
   }
 
   tx.restore();
+
+  // Fragile-ball cracks — same pin-to-world-surface pattern as dents.
+  // Each crack is a short dark line extending inward from the impact
+  // point, with an optional sub-branch for deeper cracks. Drawn slightly
+  // inside the clip (r * 0.97) so the line ends are clipped cleanly.
+  if (mat.fragile && b.cracks && b.cracks.length) {
+    tx.save();
+    tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
+    const crackCol = mat.name === 'ICE' ? 'rgba(60,100,140,0.85)' : 'rgba(30,50,80,0.85)';
+    tx.lineCap = 'round';
+    tx.strokeStyle = crackCol;
+    for (const c of b.cracks) {
+      const aa = b.angle + c.localAngle;
+      const x0 = x + Math.cos(aa) * r * 0.96;
+      const y0 = y + Math.sin(aa) * r * 0.96;
+      const da = aa + Math.PI + c.angle; // inward + wander
+      const L = r * c.length * 0.55;
+      const x1 = x0 + Math.cos(da) * L;
+      const y1 = y0 + Math.sin(da) * L;
+      tx.lineWidth = 1.1;
+      tx.beginPath();
+      tx.moveTo(x0, y0); tx.lineTo(x1, y1);
+      tx.stroke();
+      // a small fork at the midpoint for deeper cracks
+      if (c.length > 0.6) {
+        const mx = x0 + Math.cos(da) * L * 0.55;
+        const my = y0 + Math.sin(da) * L * 0.55;
+        const fa = da + (c.localAngle > 0 ? 0.9 : -0.9);
+        tx.lineWidth = 0.7;
+        tx.beginPath();
+        tx.moveTo(mx, my);
+        tx.lineTo(mx + Math.cos(fa) * L * 0.35, my + Math.sin(fa) * L * 0.35);
+        tx.stroke();
+      }
+    }
+    tx.restore();
+  }
 
   // Gold dents — drawn AFTER the squash transform restore so they stay
   // pinned to the ball's actual world-space surface. (Inside the squash

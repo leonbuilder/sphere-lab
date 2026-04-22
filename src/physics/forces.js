@@ -105,9 +105,13 @@ export function applyMagnetism(dt) {
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2) || 0.001;
       const nx = dx / d, ny = dy / d;
-      const f = k / (d2 + eps);
-      // a meaningful magnetic force should wake both participants
-      if (f > 30) { wake(a); wake(b); }
+      // Polarity: opposite signs attract (f positive), same signs repel
+      // (f negative). Falls back to attraction if polarity isn't set (old
+      // saved balls). Force sign reversal is the whole point of real magnets.
+      const pa = a.polarity || 1;
+      const pb = b.polarity || 1;
+      const f = (k / (d2 + eps)) * (-pa * pb);
+      if (Math.abs(f) > 30) { wake(a); wake(b); }
       a.vx += nx * f / a.mass * dt;
       a.vy += ny * f / a.mass * dt;
       if (!b.pinned) {

@@ -56,10 +56,26 @@ export function physicsStep(dt) {
   for (const b of balls) {
     b.life += dt;
     const mat = b.mat;
-    // squash recovery rate depends on material: rubber recovers slowly (bouncy
-    // memory), steel snaps back instantly (rigid).
-    const squashRate = 20 - (mat.deform || 0.4) * 15;
-    b.squash = lerp(b.squash, 1, clamp(dt * squashRate, 0, 1));
+    // Viscoelastic squash recovery. Materials with low `bounceBack` are
+    // overdamped (simple exponential — steel snaps back). Materials with
+    // high `bounceBack` use a spring-damper ODE so they jiggle visibly
+    // back to rest over ~150 ms — rubber wobble, plasma wiggle.
+    const bb = mat.bounceBack ?? 0;
+    if (bb < 0.05) {
+      const squashRate = 20 - (mat.deform || 0.4) * 15;
+      b.squash = lerp(b.squash, 1, clamp(dt * squashRate, 0, 1));
+      b.squashVel = 0;
+    } else {
+      // stiffness ~ 900, damping reduced for elastic materials
+      const stiffness = 900 * (1 - bb * 0.4);
+      const damping = 28 * (1 - bb * 0.82);
+      const err = 1 - b.squash;
+      b.squashVel += (err * stiffness - b.squashVel * damping) * dt;
+      b.squash += b.squashVel * dt;
+      // Clamp to safe range so overshoot stays visible but not absurd.
+      if (b.squash > 1.18) { b.squash = 1.18; b.squashVel = Math.min(b.squashVel, 0); }
+      if (b.squash < 0.35) { b.squash = 0.35; b.squashVel = Math.max(b.squashVel, 0); }
+    }
 
     // Per-material heat cooling — metals hold heat, rubber sheds it quickly.
     b.heat *= (mat.heatKeep ?? 0.996);
@@ -93,6 +109,18 @@ export function physicsStep(dt) {
         const emberColor = matName === 'GOLD' ? '#ffd890' : matName === 'MAGNET' ? '#ff9060' : '#ffb060';
         spawnSparkle(b.x + rand(-b.r * 0.4, b.r * 0.4), b.y + rand(-b.r * 0.4, b.r * 0.4),
                      0, -1, 35, emberColor);
+      }
+    }
+
+    // Gold anneals when hot — real gold softens and dents shallow out.
+    // Heat above 0.45 slowly reduces each dent's depth; once a dent falls
+    // below a tiny threshold it's removed entirely. This rewards using the
+    // heat tool on damaged gold balls.
+    if (mat.name === 'GOLD' && b.heat > 0.45 && b.dents && b.dents.length) {
+      const rate = (b.heat - 0.45) * 0.12 * dt;
+      for (let di = b.dents.length - 1; di >= 0; di--) {
+        b.dents[di].depth -= rate;
+        if (b.dents[di].depth <= 0.08) b.dents.splice(di, 1);
       }
     }
 

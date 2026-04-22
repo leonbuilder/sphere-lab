@@ -28,7 +28,11 @@ const FRACTURE_V = {
  */
 export function tryFracture(b, impactV) {
   if (!b.mat.fragile || b.isFragment) return false;
-  const threshold = FRACTURE_V[b.mat.name] ?? 500;
+  const base = FRACTURE_V[b.mat.name] ?? 500;
+  // Accumulated damage lowers the effective threshold — a cracked glass
+  // ball shatters on a hit that a fresh one would shrug off.
+  const dmg = b.damage ?? 0;
+  const threshold = base * (1 - dmg * 0.65);
   if (impactV < threshold) return false;
   shatter(b);
   return true;
