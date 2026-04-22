@@ -1,10 +1,19 @@
-'use strict';
+/**
+ * Web Audio synthesis — procedural impact + noise sounds with a small
+ * convolution reverb send.
+ *
+ * Lazy-inits on first user gesture (browsers block autoplay otherwise) via
+ * `Snd.init()` from mousedown in `src/input/mouse.js`.
+ */
 
-/* Web Audio synthesis — procedural impact + noise sounds with a small
-   convolution reverb send. Lazy-inits on first user gesture (browsers block
-   autoplay otherwise). */
-const Snd = {
-  ctx: null, master: null, wetBus: null, enabled: true,
+import { PHYS } from '../core/config.js';
+import { clamp } from '../core/math.js';
+
+export const Snd = {
+  /** @type {AudioContext | null} */  ctx: null,
+  /** @type {GainNode | null} */      master: null,
+  /** @type {ConvolverNode | null} */ wetBus: null,
+  enabled: true,
 
   init() {
     if (this.ctx) return;
@@ -14,6 +23,7 @@ const Snd = {
       this.master.gain.value = 0.25;
       this.master.connect(this.ctx.destination);
 
+      // build a short noise impulse response for a cheap reverb send
       const conv = this.ctx.createConvolver();
       const sr = this.ctx.sampleRate, irLen = sr * 0.8;
       const buf = this.ctx.createBuffer(2, irLen, sr);
@@ -32,6 +42,7 @@ const Snd = {
     }
   },
 
+  /** Short pitched thud — the atomic impact sound. */
   bonk(freq, vol, dur, timbre) {
     if (!this.ctx || !PHYS.sound) return;
     const t = this.ctx.currentTime;
@@ -48,6 +59,7 @@ const Snd = {
     o.start(t); o.stop(t + dur);
   },
 
+  /** Filtered white noise burst — splash, fizz, explosion tail. */
   noise(dur, vol, cutoff) {
     if (!this.ctx || !PHYS.sound) return;
     const t = this.ctx.currentTime;
@@ -63,6 +75,7 @@ const Snd = {
     src.start(t);
   },
 
+  /** Composite impact sound using both material pitches; denser material dominates timbre. */
   collision(matA, matB, magnitude) {
     const pitch = (matA.pitch + matB.pitch) * 0.5 * (1 + Math.min(magnitude * 0.002, 0.5));
     const vol   = clamp(magnitude * 0.003, 0.02, 0.35);
@@ -72,6 +85,7 @@ const Snd = {
     if (magnitude > 80) this.noise(0.05, Math.min(0.12, magnitude * 0.0008), 4000);
   },
 
+  /** Wall collision — slightly lower pitch than free collisions. */
   wall(mat, magnitude) {
     const vol   = clamp(magnitude * 0.0025, 0.02, 0.3);
     const pitch = mat.pitch * 0.7 * (1 + Math.min(magnitude * 0.001, 0.3));

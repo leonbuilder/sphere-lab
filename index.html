@@ -160,22 +160,10 @@
 
 <!--
   SPHERE LAB — modular physics sandbox.
-  Scripts are plain (non-module) so index.html runs on file://
-  Order matters: each file expects its dependencies to have loaded.
+  Single ES-module entry point; all dependencies resolve via import.
+  Requires a local server (ES modules are blocked on file://). Run:
+    ./serve.sh          # or: python3 -m http.server 8000
 -->
-<script src="src/util.js"></script>
-<script src="src/config.js"></script>
-<script src="src/materials.js"></script>
-<script src="src/world.js"></script>
-<script src="src/audio.js"></script>
-<script src="src/spring.js"></script>
-<script src="src/particles.js"></script>
-<script src="src/ball.js"></script>
-<script src="src/physics.js"></script>
-<script src="src/render.js"></script>
-<script src="src/scenes.js"></script>
-<script src="src/input.js"></script>
-<script src="src/ui.js"></script>
-<script src="src/main.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>

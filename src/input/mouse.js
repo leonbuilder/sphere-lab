@@ -1,49 +1,38 @@
-'use strict';
+/**
+ * Mouse state + all canvas mouse/wheel handlers.
+ *
+ * Exported state:
+ *   mouse.x,   mouse.y        — screen coords (CSS px)
+ *   mouse.wx,  mouse.wy       — world coords
+ *   mouse.down, right, middle — button state
+ *   mouse.shift               — shift pressed at last mousedown
+ *   mouse.sx,  mouse.sy       — drag-start in screen coords
+ *   mouse.wsx, mouse.wsy      — drag-start in world coords
+ *   mouse.grab                — ball currently being held
+ *   mouse.linkFirst           — first ball picked in LINK tool
+ *   mouse.draw                — { x1, y1, active } for the DRAW tool
+ *
+ * `step.js` reads `mouse` + `getTool()` each frame for the PUSH/HEAT tools.
+ * `main.js` reads `mouse` for the slingshot preview.
+ */
 
-/* Mouse, wheel, and keyboard wiring + the active-tool state machine.
-   Relies on canvas from render.js already existing. */
+import { clamp, len, rand } from '../core/math.js';
+import { W, cam, screenToWorld } from '../core/world.js';
+import { canvas } from '../render/canvas.js';
+import { balls, spawnBall } from '../entities/ball.js';
+import { Spring } from '../entities/spring.js';
+import { Snd } from '../audio/sound.js';
+import { explode } from '../physics/explode.js';
+import { getTool, ballAt, wallAt } from './tools.js';
 
-const mouse = {
+export const mouse = {
   x: 0, y: 0, wx: 0, wy: 0,
   down: false, right: false, middle: false, shift: false,
   sx: 0, sy: 0, wsx: 0, wsy: 0,
-  grab: null, linkFirst: null,
+  /** @type {import('../entities/ball.js').Ball | null} */ grab: null,
+  /** @type {import('../entities/ball.js').Ball | null} */ linkFirst: null,
   draw: { x1: 0, y1: 0, active: false }
 };
-
-let TOOL = 'spawn';
-function setTool(t) {
-  TOOL = t;
-  document.querySelectorAll('#tool-row .btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
-  document.getElementById('stat-tool').textContent = t.toUpperCase();
-  document.getElementById('mode-indicator').textContent = t.toUpperCase() + ' MODE';
-  canvas.style.cursor =
-    t === 'grab'  ? 'grab'      :
-    t === 'draw'  ? 'crosshair' :
-    t === 'erase' ? 'not-allowed'
-                  : 'crosshair';
-}
-
-function ballAt(x, y) {
-  for (let i = balls.length - 1; i >= 0; i--) {
-    const b = balls[i];
-    if ((b.x - x) ** 2 + (b.y - y) ** 2 < b.r * b.r) return b;
-  }
-  return null;
-}
-
-function wallAt(x, y, tol = 8) {
-  for (let i = 0; i < W.walls.length; i++) {
-    const w = W.walls[i];
-    const wx = w.x2 - w.x1, wy = w.y2 - w.y1;
-    const l2 = wx * wx + wy * wy;
-    let t = ((x - w.x1) * wx + (y - w.y1) * wy) / l2;
-    t = clamp(t, 0, 1);
-    const cx = w.x1 + wx * t, cy = w.y1 + wy * t;
-    if ((x - cx) ** 2 + (y - cy) ** 2 < tol * tol) return i;
-  }
-  return -1;
-}
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -59,6 +48,8 @@ canvas.addEventListener('mousedown', e => {
   if (e.button === 1) { mouse.middle = true; return; }
   if (e.button === 2) { mouse.right = true; explode(mouse.wx, mouse.wy, 900, 240); return; }
   mouse.down = true;
+
+  const TOOL = getTool();
 
   if (TOOL === 'grab' || TOOL === 'pin') {
     const b = ballAt(mouse.wx, mouse.wy);
@@ -76,6 +67,7 @@ canvas.addEventListener('mousedown', e => {
   }
 
   if (TOOL === 'spawn') {
+    // click on an existing ball = grab it (shorthand — no tool switch needed)
     const b = ballAt(mouse.wx, mouse.wy);
     if (b) { mouse.grab = b; b.grabbed = true; return; }
   }
@@ -83,7 +75,7 @@ canvas.addEventListener('mousedown', e => {
   if (TOOL === 'link') {
     const b = ballAt(mouse.wx, mouse.wy);
     if (b) {
-      if (mouse.linkFirst && mouse.linkFirst !== b && !mouse.linkFirst.dead) {
+      if (mouse.linkFirst && mouse.linkFirst !== b) {
         const d = Math.hypot(mouse.linkFirst.x - b.x, mouse.linkFirst.y - b.y);
         W.springs.push(new Spring(mouse.linkFirst, b, d, 0.6, 0.1));
         Snd.spring();
@@ -100,6 +92,7 @@ canvas.addEventListener('mousedown', e => {
     if (b) {
       const i = balls.indexOf(b);
       if (i >= 0) balls.splice(i, 1);
+      // also drop any linkers/tethers that referenced this ball
       W.springs = W.springs.filter(s => s.a !== b && s.b !== b);
       W.constraints = W.constraints.filter(c => c.a !== b);
       Snd.click();
@@ -114,7 +107,6 @@ canvas.addEventListener('mousedown', e => {
     mouse.draw.active = true;
     mouse.draw.x1 = mouse.wx;
     mouse.draw.y1 = mouse.wy;
-    return;
   }
 });
 
@@ -123,9 +115,8 @@ canvas.addEventListener('mousemove', e => {
   const wc = screenToWorld(mouse.x, mouse.y);
   mouse.wx = wc.x; mouse.wy = wc.y;
   if (mouse.middle) {
-    const dx = -e.movementX / cam.zoom;
-    const dy = -e.movementY / cam.zoom;
-    cam.tx += dx; cam.ty += dy;
+    cam.tx += -e.movementX / cam.zoom;
+    cam.ty += -e.movementY / cam.zoom;
   }
 });
 
@@ -134,8 +125,10 @@ canvas.addEventListener('mouseup', e => {
   if (e.button === 2) { mouse.right  = false; return; }
   mouse.down = false;
 
+  const TOOL = getTool();
+
   if (mouse.grab) {
-    // Flick impulse — translate mouse travel to velocity.
+    // flick impulse — distance travelled during the grab becomes velocity
     const dx = mouse.wx - mouse.grab.x;
     const dy = mouse.wy - mouse.grab.y;
     mouse.grab.vx += dx * 10;
@@ -144,6 +137,7 @@ canvas.addEventListener('mouseup', e => {
     mouse.grab = null;
     return;
   }
+
   if (TOOL === 'draw' && mouse.draw.active) {
     const dx = mouse.wx - mouse.draw.x1;
     const dy = mouse.wy - mouse.draw.y1;
@@ -154,6 +148,7 @@ canvas.addEventListener('mouseup', e => {
     mouse.draw.active = false;
     return;
   }
+
   if (TOOL === 'spawn') {
     const dx = mouse.wsx - mouse.wx;
     const dy = mouse.wsy - mouse.wy;
@@ -176,35 +171,9 @@ canvas.addEventListener('wheel', e => {
   const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
   const oldZoom = cam.tz;
   const newZoom = clamp(cam.tz * factor, 0.3, 5);
+  // zoom at cursor — keep the world point under the cursor fixed
   const wb = screenToWorld(e.clientX, e.clientY);
   cam.tz = newZoom;
   cam.tx += (wb.x - cam.tx) * (1 - oldZoom / newZoom);
   cam.ty += (wb.y - cam.ty) * (1 - oldZoom / newZoom);
 }, { passive: false });
-
-addEventListener('keydown', e => {
-  const key = e.key.toLowerCase();
-  if (e.target.tagName === 'INPUT') return;
-
-  if (key === ' ')              { PHYS.paused = !PHYS.paused; updatePauseBtn(); e.preventDefault(); }
-  else if (key === 'f') {
-    PHYS.slowmo = PHYS.slowmo === 1 ? 0.15 : 1;
-    const bt = document.getElementById('btn-slowmo');
-    bt.textContent = PHYS.slowmo === 1 ? 'SLOW-MO [F]' : 'NORMAL [F]';
-    bt.classList.toggle('active', PHYS.slowmo !== 1);
-  }
-  else if (key === 'g')         { PHYS.gravityOn = !PHYS.gravityOn; setGravityUI(PHYS.gravityOn); }
-  else if (key === 'c')         { balls.length = 0; particles.length = 0; W.springs.length = 0; }
-  else if (key === 'r' && e.ctrlKey) { loadScene(W.scene); }
-  else if (key === 'm')         { PHYS.motionBlur = !PHYS.motionBlur; }
-  else if (key === 'b')         { PHYS.bloom     = !PHYS.bloom;     updateToggle('t-bloom', PHYS.bloom); }
-  else if (key === 'v')         { PHYS.showVec   = !PHYS.showVec;   updateToggle('t-vec',   PHYS.showVec); }
-  else if (key === 's')         { PHYS.sound     = !PHYS.sound;     updateToggle('t-sound', PHYS.sound); }
-  else if (key === 'h')         { PHYS.heatFx    = !PHYS.heatFx;    updateToggle('t-heat',  PHYS.heatFx); }
-  else if (key === '0')         { cam.tx = W.cw / 2; cam.ty = W.ch / 2; cam.tz = 1; }
-  else if (TOOL_KEYS[key])      { setTool(TOOL_KEYS[key]); }
-  else if (key >= '1' && key <= '9') {
-    const idx = parseInt(key) - 1;
-    if (idx < MAT_KEYS.length) { selectedMat = MAT_KEYS[idx]; updateMatButtons(); }
-  }
-});
