@@ -525,9 +525,9 @@ export const Snd = {
    * `commitRoll` applies the mix to a smoothed gain so transitions are
    * seamless instead of chopped.                                        */
 
-  /** @type {Record<string, {source:AudioBufferSourceNode, filter:BiquadFilterNode, gain:GainNode, profile:any}>} */
+  /** @type {Record<string, {source:AudioBufferSourceNode, filter:BiquadFilterNode, gain:GainNode, pan:StereoPannerNode, profile:any}>} */
   _rollVoices: {},
-  /** @type {Record<string, number>} */
+  /** @type {Record<string, {total:number, rSum:number, xSum:number}>} */
   _rollMix: {},
 
   _rollProfile(matName) {
@@ -572,39 +572,60 @@ export const Snd = {
     if (profile.q !== undefined) filter.Q.value = profile.q;
     const gain = this.ctx.createGain();
     gain.gain.value = 0;
+    const pan = this.ctx.createStereoPanner();
+    pan.pan.value = 0;
     source.connect(filter);
     filter.connect(gain);
-    gain.connect(this.master);
+    gain.connect(pan);
+    pan.connect(this.master);
     source.start();
 
-    const voice = { source, filter, gain, profile };
+    const voice = { source, filter, gain, pan, profile };
     this._rollVoices[matName] = voice;
     return voice;
   },
 
-  /** Called per rolling ball per physics tick. `intensity` is tangential
-   *  speed (px/s) — it gets summed across all balls of that material. */
-  addRoll(matName, intensity) {
-    this._rollMix[matName] = (this._rollMix[matName] || 0) + intensity;
+  /** Called per rolling ball per physics tick. Accumulates intensity
+   *  (tangential speed, px/s), size (radius, px), and position (canvas x,
+   *  px). The commit stage uses intensity as a weight to compute a
+   *  representative size + position for the material, then derives filter
+   *  frequency and stereo pan from them. */
+  addRoll(matName, intensity, radius, x) {
+    let m = this._rollMix[matName];
+    if (!m) { m = { total: 0, rSum: 0, xSum: 0 }; this._rollMix[matName] = m; }
+    m.total += intensity;
+    m.rSum  += intensity * radius;
+    m.xSum  += intensity * x;
   },
 
   /** After all balls have contributed, apply mix to voice gains with
    *  smoothing. Materials not contributing this frame fade to silence. */
   commitRoll() {
     if (!this.ctx || !PHYS.sound || PHYS.volume <= 0) {
-      // Still clear the mix so the next frame starts clean.
       this._rollMix = {};
       return;
     }
     const t = this.ctx.currentTime;
+    const cw = W.cw || window.innerWidth || 1000;
     for (const name in this._rollMix) {
-      const intensity = this._rollMix[name];
+      const m = this._rollMix[name];
+      if (m.total <= 0) continue;
       const voice = this._ensureRollVoice(name);
       if (!voice) continue;
-      const target = Math.min(0.18, intensity * 0.00035 * voice.profile.gs);
+      const avgR = m.rSum / m.total;
+      const avgX = m.xSum / m.total;
+      // Filter frequency shift with size — smaller balls whine higher
+      // (scale chosen to match the modal-impact sizeExp roughly).
+      const freqScale = Math.pow(20 / Math.max(4, avgR), 0.75);
+      const targetFreq = voice.profile.freq * freqScale;
+      voice.filter.frequency.setTargetAtTime(targetFreq, t, 0.05);
+      // Stereo pan weighted by intensity-weighted x of contributors.
+      const panVal = clamp((avgX / cw) * 2 - 1, -0.85, 0.85);
+      voice.pan.pan.setTargetAtTime(panVal, t, 0.06);
+      // Gain
+      const target = Math.min(0.18, m.total * 0.00035 * voice.profile.gs);
       voice.gain.gain.setTargetAtTime(target, t, 0.06);
     }
-    // Fade out any material that didn't contribute this frame.
     for (const name in this._rollVoices) {
       if (this._rollMix[name] === undefined) {
         const voice = this._rollVoices[name];
@@ -612,6 +633,41 @@ export const Snd = {
       }
     }
     this._rollMix = {};
+  },
+
+  /* ------------------------------------------------------------------ */
+  /*  Plasma arc sustain — a continuous buzz under the crackle pops      */
+  /* ------------------------------------------------------------------ */
+  _plasmaHum: null,
+  _plasmaHumTarget: 0,
+
+  _ensurePlasmaHum() {
+    if (this._plasmaHum) return this._plasmaHum;
+    if (!this.ctx) return null;
+    // Two detuned oscillators through a bandpass — cheap electric buzz.
+    const o1 = this.ctx.createOscillator();
+    o1.type = 'sawtooth'; o1.frequency.value = 112;
+    const o2 = this.ctx.createOscillator();
+    o2.type = 'square';   o2.frequency.value = 227;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass'; filter.frequency.value = 780; filter.Q.value = 6;
+    const gain = this.ctx.createGain(); gain.gain.value = 0;
+    o1.connect(filter); o2.connect(filter);
+    filter.connect(gain); gain.connect(this.master);
+    o1.start(); o2.start();
+    this._plasmaHum = { o1, o2, filter, gain };
+    return this._plasmaHum;
+  },
+
+  /** Called once per physics tick with the sum of pair intensities (each
+   *  pair contributes t², 0..1, where t is closeness). */
+  setPlasmaHum(intensity) {
+    if (!this.ctx || !PHYS.sound || PHYS.volume <= 0) return;
+    const hum = this._ensurePlasmaHum();
+    if (!hum) return;
+    const target = Math.min(0.045, intensity * 0.025);
+    const t = this.ctx.currentTime;
+    hum.gain.gain.setTargetAtTime(target, t, 0.12);
   },
 
   /** Short electric crackle — used when plasma balls are close enough to

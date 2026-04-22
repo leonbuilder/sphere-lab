@@ -205,6 +205,13 @@ export function collideBalls(a, b) {
     b.heat = clamp(b.heat - flow, 0, 1);
   }
 
+  // Ball-ball contact also registers as a "rolling surface" — enough to
+  // feed the rolling-sound mix (two balls grinding past each other should
+  // be audible). Using the ball-ball normal is an approximation for the
+  // damping geometry but correct for the sound trigger.
+  a.groundT = 0.08; a.contactNx = nx;  a.contactNy = ny;
+  b.groundT = 0.08; b.contactNx = -nx; b.contactNy = -ny;
+
   wake(a); wake(b);
 
   // per-hit chip emission for materials with probabilistic chip shedding (ice)
@@ -273,7 +280,10 @@ export function collideWall(b, wall) {
   b.vy -= vn * ny * (1 + e);
 
   const restFactor = Math.abs(vn) < 80 ? 1.6 : 1;
-  const mu = b.mat.friction * PHYS.frictionMul * heatFricMod(b) * restFactor;
+  // Mercury / fluid materials have much higher effective friction on walls,
+  // so they cling before sliding off — closes the "mercury feels solid" gap.
+  const fluidPull = b.mat.fluid ? 2.6 : 1;
+  const mu = b.mat.friction * PHYS.frictionMul * heatFricMod(b) * restFactor * fluidPull;
   const denom = 1 + b.r * b.r / b.inertia * b.mass;
   let jt = -relT * b.mass * (1 + baseE * 0.08) / denom;
   const maxJt = Math.abs(vn) * mu * b.mass;
@@ -300,8 +310,8 @@ export function collideWall(b, wall) {
 
   // Rolling-resistance contact: every wall touch refreshes the contact
   // timer so step.js can apply per-material tangential damping while the
-  // ball is rolling. Expires ~80 ms after the last contact.
-  b.groundT = 0.08;
+  // ball is rolling. Fluids get a longer grace — they cling.
+  b.groundT = b.mat.fluid ? 0.20 : 0.08;
   b.contactNx = nx;
   b.contactNy = ny;
 

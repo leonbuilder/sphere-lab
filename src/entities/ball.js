@@ -17,11 +17,12 @@ import { MATERIALS } from './materials.js';
 let BID = 0;
 
 /** After this many seconds of near-stillness + gravity-resting, sleep. */
-export const SLEEP_DELAY = 0.5;
-/** Linear speed below which a ball counts as "resting" for sleep purposes. */
-export const SLEEP_V  = 6;
+export const SLEEP_DELAY = 0.45;
+/** Linear speed below which a ball counts as "resting" for sleep purposes.
+ *  Bumped up from 6 so stacks settle instead of jittering. */
+export const SLEEP_V  = 9;
 /** Angular speed below which a ball counts as "resting" for sleep purposes. */
-export const SLEEP_W  = 0.8;
+export const SLEEP_W  = 1.2;
 
 export class Ball {
   /** @param {number} x @param {number} y @param {number} r @param {import('./materials.js').Material} mat */

@@ -59,14 +59,33 @@ export function drawParticles(tx) {
     tx.globalAlpha = a;
 
     if (p.type === 'spark') {
+      // Real sparks trail behind their hot core — draw a short line in the
+      // direction the spark is coming from, with a bright fillet at the tip.
+      const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy) || 1;
+      const trailLen = Math.min(18, sp * 0.025) * (0.5 + 0.5 * a);
+      const ux = -p.vx / sp, uy = -p.vy / sp;
+      tx.strokeStyle = p.color;
+      tx.lineWidth = Math.max(0.8, p.size * a * 0.85);
+      tx.lineCap = 'round';
+      tx.beginPath();
+      tx.moveTo(p.x, p.y);
+      tx.lineTo(p.x + ux * trailLen, p.y + uy * trailLen);
+      tx.stroke();
+      // bright tip
       tx.fillStyle = p.color;
       tx.beginPath();
-      tx.arc(p.x, p.y, p.size * a, 0, TAU);
+      tx.arc(p.x, p.y, Math.max(0.7, p.size * a * 0.55), 0, TAU);
       tx.fill();
     } else if (p.type === 'smoke') {
-      const g = tx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
-      g.addColorStop(0, p.color);
-      g.addColorStop(1, withAlpha(p.color, 0));
+      // Off-center inner blob keeps the cloud from looking like a perfect
+      // disc — cheap turbulence illusion.
+      const phase = p.life * 4 + p.x * 0.013;
+      const ox = Math.cos(phase) * p.size * 0.22;
+      const oy = Math.sin(phase * 1.3) * p.size * 0.22;
+      const g = tx.createRadialGradient(p.x + ox, p.y + oy, 0, p.x, p.y, p.size);
+      g.addColorStop(0,    p.color);
+      g.addColorStop(0.35, withAlpha(p.color, 0.6));
+      g.addColorStop(1,    withAlpha(p.color, 0));
       tx.fillStyle = g;
       tx.beginPath();
       tx.arc(p.x, p.y, p.size, 0, TAU);

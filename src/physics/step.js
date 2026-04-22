@@ -134,6 +134,42 @@ export function physicsStep(dt) {
       b.vx = vn * nx + vtx * dampFac;
       b.vy = vn * ny + vty * dampFac;
       b.omega *= Math.max(0, 1 - rollK * 20 * dt);
+
+      // Static friction — below a small tangential speed + low spin, snap
+      // the ball to rest on the surface. Prevents endless creep on slight
+      // slopes and fixes the "ball almost stopped but doesn't quite" case.
+      // Threshold scales with friction coefficient (grippy materials stick
+      // at higher speeds).
+      const staticThresh = 2.5 + (mat.friction || 0.3) * 14;
+      const vtMag = Math.sqrt(vtx * vtx + vty * vty);
+      if (vtMag < staticThresh && Math.abs(b.omega) < 1.3) {
+        b.vx = vn * nx;
+        b.vy = vn * ny;
+        b.omega *= 0.5;
+      }
+    }
+
+    // Hot-ball cooling trail — a short fading heat smear behind any moving
+    // hot ball. Reuses the smoke particle type with hot colors so there's
+    // no new particle branch. Only spawns above a speed threshold so
+    // stationary hot balls keep their vertical shimmer-only look.
+    if (PHYS.heatFx && b.heat > 0.3 && !b.isFragment) {
+      const spd = len(b.vx, b.vy);
+      if (spd > 70 && Math.random() < dt * 32) {
+        const hotCol = b.heat > 0.65
+          ? 'rgba(255,80,30,0.55)'
+          : 'rgba(255,140,50,0.45)';
+        particles.push({
+          x: b.x + rand(-b.r * 0.25, b.r * 0.25),
+          y: b.y + rand(-b.r * 0.25, b.r * 0.25),
+          vx: b.vx * 0.12 + rand(-14, 14),
+          vy: b.vy * 0.12 + rand(-14, 14) - 18,
+          life: 0.35, maxLife: 0.35,
+          color: hotCol,
+          size: b.r * (0.35 + 0.3 * b.heat),
+          type: 'smoke'
+        });
+      }
     }
 
     applyVortex(b, dt);
@@ -253,6 +289,12 @@ export function physicsStep(dt) {
       if (b.restTime > SLEEP_DELAY) {
         b.sleeping = true;
         b.vx = 0; b.vy = 0; b.omega = 0;
+      } else {
+        // Mild settling damping while accumulating rest time — prevents
+        // tiny numeric jitter in piles from repeatedly resetting restTime.
+        b.vx *= 0.88;
+        b.vy *= 0.88;
+        b.omega *= 0.88;
       }
     } else {
       b.restTime = 0;
@@ -261,10 +303,10 @@ export function physicsStep(dt) {
   }
 
   // Rolling / sliding sound contribution. Each ball in contact with a
-  // surface AND moving tangentially adds its tangential speed to its
-  // material's mix bus. The audio layer smooths this into continuous
-  // voice gain, so rubber squeaks while rolling and ice hisses while
-  // sliding — the silence that used to exist below the impact gate.
+  // surface AND moving tangentially contributes tangential speed + its
+  // size + position to its material's mix bus. The audio layer uses those
+  // to set per-material filter freq (small balls high, big low) and
+  // stereo pan (weighted by which side of the canvas the rolling happens).
   for (const b of balls) {
     if (b.sleeping || b.groundT <= 0) continue;
     const nx = b.contactNx, ny = b.contactNy;
@@ -272,12 +314,13 @@ export function physicsStep(dt) {
     const vtx = b.vx - vn * nx;
     const vty = b.vy - vn * ny;
     const vt = Math.sqrt(vtx * vtx + vty * vty);
-    if (vt > 12) Snd.addRoll(b.mat.name, vt);
+    if (vt > 12) Snd.addRoll(b.mat.name, vt, b.r, b.x);
   }
   Snd.commitRoll();
 
-  // Plasma arcs — a subtle electric crackle whenever two plasmas are
-  // within arc range. Rate-limited by the sound layer's voice budget.
+  // Plasma: cumulative arc intensity (for sustain buzz) + occasional
+  // crackle per close pair.
+  let plasmaArcTotal = 0;
   for (let i = 0; i < balls.length; i++) {
     const a = balls[i];
     if (a.mat.name !== 'PLASMA') continue;
@@ -287,13 +330,15 @@ export function physicsStep(dt) {
       const dx = c.x - a.x, dy = c.y - a.y;
       const d2 = dx * dx + dy * dy;
       if (d2 > 140 * 140) continue;
-      // Probability rises as they get closer.
       const t = 1 - Math.sqrt(d2) / 140;
+      plasmaArcTotal += t * t;
+      // Occasional transient crackle on top of the sustain.
       if (Math.random() < dt * 14 * t * t) {
         Snd.crackle((a.x + c.x) * 0.5, 0.85 + Math.random() * 0.4);
       }
     }
   }
+  Snd.setPlasmaHum(plasmaArcTotal);
 
   // particles
   for (const p of particles) {

@@ -100,6 +100,29 @@ export function drawBall(tx, b) {
   const { x, y, r, mat } = b;
   const squashAmt = b.squash;
 
+  // Center-of-mass wobble for dented balls. Each dent removes metal at its
+  // location, so the CoM drifts away from the dented side. The drawn body
+  // shifts toward the heavy (un-dented) side — as the ball rotates, this
+  // traces a tiny orbit, reading as a convincing wobble. Pure visual, no
+  // physics impact. Only kicks in once several dents have accumulated.
+  let wobbleX = 0, wobbleY = 0;
+  if (mat.dentable && b.dents && b.dents.length > 2) {
+    let sx = 0, sy = 0, sw = 0;
+    for (const d of b.dents) {
+      const aa = b.angle + d.localAngle;
+      sx += Math.cos(aa) * d.depth;
+      sy += Math.sin(aa) * d.depth;
+      sw += d.depth;
+    }
+    if (sw > 0.6) {
+      const mag = Math.min(1, (sw - 0.6) * 0.6);
+      wobbleX = -(sx / sw) * r * 0.035 * mag;
+      wobbleY = -(sy / sw) * r * 0.035 * mag;
+    }
+  }
+  const wobbling = wobbleX !== 0 || wobbleY !== 0;
+  if (wobbling) { tx.save(); tx.translate(wobbleX, wobbleY); }
+
   // fade fragments in their last 0.8 s of life
   let alphaScale = 1;
   if (b.lifespan !== undefined && b.lifespan < 0.8) {
@@ -224,17 +247,49 @@ export function drawBall(tx, b) {
   }
 
   // Hot-metal forge glow — a directed orange/red inner lick when a metallic
-  // body is heated. Separate from the omni heat aura above; this sits
-  // inside the silhouette so it reads as "the metal itself is glowing".
+  // body is heated. Breathes slightly so it feels alive instead of static.
   if (PHYS.heatFx && b.heat > 0.4 && mat.metallic > 0.4) {
     const hh = Math.min(1, (b.heat - 0.4) / 0.6);
+    const breathe = 1 + 0.15 * Math.sin(performance.now() * 0.0032 + b.id);
+    const alpha = hh * breathe;
     const hgCol = mat.name === 'GOLD' ? '#ff9830' : '#ff5020';
     const hg = tx.createRadialGradient(x, y, r * 0.05, x, y, r);
-    hg.addColorStop(0,    withAlpha(hgCol, 0.35 * hh));
-    hg.addColorStop(0.6,  withAlpha(hgCol, 0.18 * hh));
+    hg.addColorStop(0,    withAlpha(hgCol, 0.38 * alpha));
+    hg.addColorStop(0.6,  withAlpha(hgCol, 0.20 * alpha));
     hg.addColorStop(1,    withAlpha(hgCol, 0));
     tx.fillStyle = hg;
     tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
+  }
+
+  // Ice crystalline interior — sparse white-line lattice inside ice balls,
+  // fading out as heat rises (melting erases the crystal structure).
+  if (mat.name === 'ICE' && !b.isFragment) {
+    const crystalAlpha = Math.max(0, 1 - b.heat * 1.5);
+    if (crystalAlpha > 0.05) {
+      tx.lineWidth = 0.7;
+      tx.strokeStyle = withAlpha('#ffffff', 0.32 * crystalAlpha);
+      // Deterministic pattern seeded by ball id so a given ball always has
+      // the same lattice — not a new random pattern each frame.
+      const seed = b.id * 1337;
+      for (let i = 0; i < 4; i++) {
+        const s = (seed + i * 97) % 628;
+        const e = (seed * 3 + i * 131) % 628;
+        const a1 = (s / 100) + b.angle;
+        const a2 = (e / 100) + b.angle;
+        const r1 = r * (0.35 + (seed >> i) % 50 / 100);
+        const r2 = r * (0.55 + ((seed >> (i + 2)) % 40) / 100);
+        tx.beginPath();
+        tx.moveTo(x + Math.cos(a1) * r1, y + Math.sin(a1) * r1);
+        tx.lineTo(x + Math.cos(a2) * r2, y + Math.sin(a2) * r2);
+        tx.stroke();
+      }
+      // a faint frosty sparkle dot
+      tx.fillStyle = withAlpha('#ffffff', 0.45 * crystalAlpha);
+      const sa = b.angle * 1.1;
+      tx.beginPath();
+      tx.arc(x + Math.cos(sa) * r * 0.35, y + Math.sin(sa) * r * 0.35, 0.9, 0, TAU);
+      tx.fill();
+    }
   }
   tx.restore();
 
@@ -332,6 +387,7 @@ export function drawBall(tx, b) {
   if (b.lifespan !== undefined && b.lifespan < 0.8) {
     tx.restore();
   }
+  if (wobbling) tx.restore();
 }
 
 export function drawTrail(tx, b) {
