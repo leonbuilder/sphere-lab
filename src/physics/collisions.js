@@ -306,7 +306,11 @@ export function collideWall(b, wall) {
   const e = baseE * PHYS.restitutionMul * velRestScale(Math.abs(vn)) * heatRestMod(b);
   const tx = -ny, ty = nx;
   const vt = b.vx * tx + b.vy * ty;
-  const surfV = b.omega * b.r;
+  // Tangential surface velocity at the contact point from angular motion.
+  // Contact is at position (-nx·r, -ny·r) from the ball center, so
+  // `ω × contact` dotted with (tx,ty) works out to -ω·r. Using the wrong
+  // sign here made rolling balls appear to spin *against* their motion.
+  const surfV = -b.omega * b.r;
   const relT = vt + surfV;
 
   b.vx -= vn * nx * (1 + e);
@@ -322,7 +326,10 @@ export function collideWall(b, wall) {
   const maxJt = Math.abs(vn) * mu * b.mass;
   if (jt > maxJt) jt = maxJt; else if (jt < -maxJt) jt = -maxJt;
   b.vx += jt * tx / b.mass; b.vy += jt * ty / b.mass;
-  b.omega += jt * b.r / b.inertia;
+  // Torque from the friction impulse at the contact — the cross product
+  // gives -r·jt, i.e. omega should *decrease* when jt is positive. (Was
+  // `+=` which is the pair of the surfV sign error above.)
+  b.omega -= jt * b.r / b.inertia;
 
   if (wall.conveyorV) {
     const wlen = Math.sqrt(wlen2);
@@ -390,12 +397,14 @@ export function collidePeg(b, peg) {
 
   const tx = -ny, ty = nx;
   const vt = b.vx * tx + b.vy * ty;
-  const surfV = b.omega * b.r;
+  // Same sign convention as wall — tangential surface velocity at contact
+  // is -ω·r (contact sits opposite the outward normal on the ball).
+  const surfV = -b.omega * b.r;
   let jt = -(vt + surfV) * 0.3;
   const maxJ = Math.abs(vn) * b.mat.friction * PHYS.frictionMul * 3;
   jt = clamp(jt, -maxJ, maxJ);
   b.vx += jt * tx; b.vy += jt * ty;
-  b.omega += jt * b.r / b.inertia * b.mass;
+  b.omega -= jt * b.r / b.inertia * b.mass;
 
   wake(b);
 
