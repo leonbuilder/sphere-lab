@@ -21,7 +21,7 @@
  */
 
 /**
- * @typedef {'steel'|'rubber'|'glass'|'bowling'|'neon'|'gold'|'plasma'|'ice'|'magnet'|'mercury'|'diamond'} MaterialId
+ * @typedef {'steel'|'rubber'|'glass'|'bowling'|'neon'|'gold'|'plasma'|'ice'|'magnet'|'mercury'|'diamond'|'obsidian'} MaterialId
  */
 
 /**
@@ -65,7 +65,12 @@ export const MATERIALS = {
   // elastic bounce, exceptional "fire" (chromatic dispersion), crystalline
   // ring that outlasts glass. Effectively unbreakable in normal use — it
   // doesn't get the `fragile` flag, so it never cracks or shatters.
-  diamond: { name: 'DIAMOND', color: '#e8f4ff', density: 3.52, restitution: 0.94, friction: 0.06, metallic: 0.20, glow: 0.10, refract: 1.00, pitch: 2200, timbre: 'sine',     deform: 0.0,  roll: 0.004, heatKeep: 0.9976, cond: 0.99, bounceBack: 0.00 }
+  diamond: { name: 'DIAMOND', color: '#e8f4ff', density: 3.52, restitution: 0.94, friction: 0.06, metallic: 0.20, glow: 0.10, refract: 1.00, pitch: 2200, timbre: 'sine',     deform: 0.0,  roll: 0.004, heatKeep: 0.9976, cond: 0.99, bounceBack: 0.00 },
+  // Obsidian — volcanic glass. Dark polished surface, brittle core: cleaves
+  // easier than glass (lower fracture threshold) and breaks into jagged
+  // angular spikes instead of soft shards. Low thermal conductivity, poor
+  // bounce, glossy metallic sheen.
+  obsidian: { name: 'OBSIDIAN', color: '#1f1824', density: 2.55, restitution: 0.32, friction: 0.14, metallic: 0.70, glow: 0,    refract: 0.20, pitch: 900,  timbre: 'sine',     deform: 0.0,  roll: 0.010, heatKeep: 0.9960, cond: 0.18, bounceBack: 0.00, fragile: true }
 };
 
 /** @type {MaterialId[]} */

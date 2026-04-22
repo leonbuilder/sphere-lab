@@ -128,7 +128,8 @@ export function drawParticles(tx) {
       tx.globalAlpha = 1;
       tx.beginPath(); tx.arc(p.x, p.y, p.size * 1.4, 0, TAU); tx.fill();
     } else if (p.type === 'shard') {
-      // tumbling fragment — thin triangle that rotates
+      // tumbling fragment — thin triangle that rotates. Obsidian's jagged
+      // variant draws a long asymmetric spike with a rim highlight.
       tx.save();
       tx.translate(p.x, p.y);
       tx.rotate(p.rot ?? 0);
@@ -137,12 +138,30 @@ export function drawParticles(tx) {
       tx.lineWidth = 0.6;
       const s = p.size;
       tx.beginPath();
-      tx.moveTo(-s, -s * 0.4);
-      tx.lineTo(s,  -s * 0.1);
-      tx.lineTo(s * 0.3, s * 0.8);
+      if (p.jagged) {
+        // elongated cleaved spike with an extra kink on the trailing edge
+        tx.moveTo(-s * 1.8, -s * 0.12);
+        tx.lineTo( s * 2.0, -s * 0.25);
+        tx.lineTo( s * 0.2,  s * 0.18);
+        tx.lineTo(-s * 0.3,  s * 0.08);
+        tx.lineTo(-s * 0.1, -s * 0.04);
+      } else {
+        tx.moveTo(-s, -s * 0.4);
+        tx.lineTo( s, -s * 0.1);
+        tx.lineTo( s * 0.3, s * 0.8);
+      }
       tx.closePath();
       tx.fill();
       tx.stroke();
+      // Jagged shards get a bright specular streak along their leading edge
+      if (p.jagged) {
+        tx.strokeStyle = 'rgba(255,255,255,0.55)';
+        tx.lineWidth = 0.5;
+        tx.beginPath();
+        tx.moveTo(-s * 1.6, -s * 0.10);
+        tx.lineTo( s * 1.7, -s * 0.22);
+        tx.stroke();
+      }
       tx.restore();
     }
   }

@@ -134,6 +134,11 @@ function spawnImpactFor(mat, x, y, nx, ny, magnitude) {
       spawnSparkle(x, y, nx, ny, magnitude * 0.35, '#fff0b0');   // warm yellow
       return;
     }
+    case 'OBSIDIAN':
+      // Dark volcanic glass — small dim sparkle + black dust flecks.
+      spawnSparkle(x, y, nx, ny, magnitude * 0.6, '#6a5070');
+      if (magnitude > 40) spawnDust(x, y, magnitude * 0.7, '#2a1a30');
+      return;
     default:
       return spawnImpact(x, y, nx, ny, magnitude);
   }

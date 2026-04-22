@@ -180,6 +180,27 @@ function getMatTexture(matName) {
       }
       break;
     }
+    case 'OBSIDIAN': {
+      // Polished volcanic glass — faint conchoidal striations + sparse glossy
+      // bright glints. Dark base so only the brightest micro-highlights read.
+      for (let i = 0; i < 5; i++) {
+        tc.strokeStyle = `rgba(255,255,255,${0.07 + Math.random() * 0.08})`;
+        tc.lineWidth = 0.4;
+        tc.beginPath();
+        const cx = Math.random() * TEX_SIZE;
+        const cy = Math.random() * TEX_SIZE;
+        const rad = 20 + Math.random() * 30;
+        tc.arc(cx, cy, rad, Math.random() * TAU, Math.random() * TAU + 0.9);
+        tc.stroke();
+      }
+      for (let i = 0; i < 8; i++) {
+        tc.fillStyle = `rgba(220,200,255,${0.25 + Math.random() * 0.25})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.4 + Math.random() * 0.7, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
     case 'DIAMOND': {
       // Sparse brilliant facet highlights — bright specks of light
       for (let i = 0; i < 14; i++) {
@@ -597,9 +618,10 @@ export function drawBall(tx, b) {
     tx.save();
     tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
     const crackCol =
-      mat.name === 'ICE'     ? 'rgba(60,100,140,0.85)' :
-      mat.name === 'DIAMOND' ? 'rgba(180,210,240,0.80)' :
-                               'rgba(30,50,80,0.85)';
+      mat.name === 'ICE'      ? 'rgba(60,100,140,0.85)' :
+      mat.name === 'DIAMOND'  ? 'rgba(180,210,240,0.80)' :
+      mat.name === 'OBSIDIAN' ? 'rgba(150,120,170,0.75)' :
+                                'rgba(30,50,80,0.85)';
     tx.lineCap = 'round';
     tx.strokeStyle = crackCol;
     for (const c of b.cracks) {

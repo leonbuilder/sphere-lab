@@ -14,8 +14,9 @@ import { Snd } from '../audio/sound.js';
 
 /** Threshold normal-velocity (px/s) for fracture, by material name. */
 const FRACTURE_V = {
-  GLASS: 550,
-  ICE:   380
+  GLASS:    550,
+  ICE:      380,
+  OBSIDIAN: 320
 };
 
 /**
@@ -62,15 +63,19 @@ function shatter(b) {
     balls.push(frag);
   }
 
-  // 10 decorative shard particles — more visual density without more physics
-  for (let i = 0; i < 10; i++) {
+  // 10 decorative shard particles — more visual density without more physics.
+  // Obsidian cleaves into long angular spikes rather than soft shards.
+  const isObsidian = b.mat.name === 'OBSIDIAN';
+  const shardCount = isObsidian ? 14 : 10;
+  for (let i = 0; i < shardCount; i++) {
     const a = Math.random() * TAU;
     const sp = rand(120, 420);
     spawnShard(
       b.x, b.y,
       b.vx * 0.4 + Math.cos(a) * sp,
       b.vy * 0.4 + Math.sin(a) * sp,
-      b.mat.color
+      b.mat.color,
+      isObsidian
     );
   }
 

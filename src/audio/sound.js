@@ -232,6 +232,21 @@ const MODAL = {
     attack: { type: 'bandpass', freq: 1200, dur: 0.070, amp: 0.60, q: 2.4 },
     reverbSend: 0.15
   },
+  // Obsidian — volcanic glass. Darker, lower fundamental than glass, fast
+  // decay (internal micro-fractures damp the ring), mid-range click.
+  OBSIDIAN: {
+    resonance: 0.55,
+    baseFreq: 1400,
+    sizeExp: 0.95,
+    modes: [
+      { ratio: 1.000, amp: 1.00, decay: 0.22 },
+      { ratio: 1.76,  amp: 0.55, decay: 0.16 },
+      { ratio: 2.58,  amp: 0.32, decay: 0.11 },
+      { ratio: 3.50,  amp: 0.18, decay: 0.08 }
+    ],
+    attack: { type: 'bandpass', freq: 2400, dur: 0.012, amp: 0.52, q: 1.6 },
+    reverbSend: 0.12
+  },
   // Diamond — crystalline but much harder + brighter than glass. Very high
   // fundamental, dense inharmonic mode stack, low internal damping so the
   // ring lingers. Attack is an ultrahigh click (10 kHz+). Reverb send is
@@ -563,6 +578,7 @@ export const Snd = {
       case 'MAGNET':  return { type: 'bandpass', freq: 1300, q: 3.5, gs: 1.00 };
       case 'MERCURY': return { type: 'lowpass',  freq: 520,  q: 0.7, gs: 0.90 };
       case 'DIAMOND': return { type: 'highpass', freq: 8500, q: 2.5, gs: 0.95 };
+      case 'OBSIDIAN':return { type: 'bandpass', freq: 1600, q: 3.0, gs: 0.95 };
       default:        return { type: 'bandpass', freq: 1500, q: 2.0, gs: 1.00 };
     }
   },

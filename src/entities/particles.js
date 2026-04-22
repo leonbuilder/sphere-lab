@@ -125,16 +125,19 @@ export function spawnDust(x, y, magnitude, color = '#a08670') {
   }
 }
 
-/** Bigger, slower chunk fling used by fracture. Looks like sharded glass/ice. */
-export function spawnShard(x, y, vx, vy, color) {
+/** Bigger, slower chunk fling used by fracture. Looks like sharded glass/ice.
+ *  `jagged = true` renders as a long angular spike instead of a small
+ *  triangle — used for obsidian's brittle volcanic-glass cleave. */
+export function spawnShard(x, y, vx, vy, color, jagged = false) {
   particles.push({
     x, y,
     vx: vx + rand(-40, 40), vy: vy + rand(-60, 20),
     life: rand(0.8, 1.4), maxLife: 1.4,
     color,
-    size: rand(2.5, 4.5),
+    size: jagged ? rand(3.5, 6.5) : rand(2.5, 4.5),
     type: 'shard',
     rot: rand(0, TAU),
-    rotV: rand(-12, 12)
+    rotV: rand(-12, 12),
+    jagged
   });
 }
