@@ -223,44 +223,6 @@ export function drawBall(tx, b) {
     tx.beginPath(); tx.arc(mx, my, r * 0.13, 0, TAU); tx.fill();
   }
 
-  // Gold dents — permanent plastic deformation from hard hits. Drawn inside
-  // the ball clip so they conform to the silhouette. A dent is rendered as
-  //   1. a raised metal lip around the impact site (hammered gold pushes
-  //      outward around the dent)
-  //   2. a dark crater body (the pit)
-  //   3. a small shadow crescent on the sun-opposite side of the pit
-  if (mat.dentable && b.dents && b.dents.length) {
-    for (const d of b.dents) {
-      const aa = b.angle + d.localAngle;
-      const dx = x + Math.cos(aa) * r * 0.80;
-      const dy = y + Math.sin(aa) * r * 0.80;
-      const dr = r * (0.22 + 0.30 * d.depth);
-      // 1. raised rim — slightly lighter ring surrounding the dent
-      const rg = tx.createRadialGradient(dx, dy, dr * 0.75, dx, dy, dr * 1.15);
-      rg.addColorStop(0,   withAlpha('#6a4a10', 0));
-      rg.addColorStop(0.4, withAlpha('#ffe6a0', 0.45 * d.depth));
-      rg.addColorStop(1,   withAlpha('#6a4a10', 0));
-      tx.fillStyle = rg;
-      tx.beginPath(); tx.arc(dx, dy, dr * 1.15, 0, TAU); tx.fill();
-      // 2. dark crater body
-      const dg = tx.createRadialGradient(dx, dy, 0, dx, dy, dr);
-      dg.addColorStop(0,    withAlpha('#120700', 0.85 * d.depth));
-      dg.addColorStop(0.55, withAlpha('#3a2000', 0.55 * d.depth));
-      dg.addColorStop(1,    withAlpha('#3a2000', 0));
-      tx.fillStyle = dg;
-      tx.beginPath(); tx.arc(dx, dy, dr, 0, TAU); tx.fill();
-      // 3. directional shadow crescent — inner wall of the crater on the
-      // side opposite the ball's primary light source
-      const sx = dx + Math.cos(aa) * dr * 0.30;
-      const sy = dy + Math.sin(aa) * dr * 0.30;
-      const sg = tx.createRadialGradient(sx, sy, 0, sx, sy, dr * 0.70);
-      sg.addColorStop(0, withAlpha('#000000', 0.55 * d.depth));
-      sg.addColorStop(1, withAlpha('#000000', 0));
-      tx.fillStyle = sg;
-      tx.beginPath(); tx.arc(sx, sy, dr * 0.70, 0, TAU); tx.fill();
-    }
-  }
-
   // Hot-metal forge glow — a directed orange/red inner lick when a metallic
   // body is heated. Separate from the omni heat aura above; this sits
   // inside the silhouette so it reads as "the metal itself is glowing".
@@ -302,6 +264,46 @@ export function drawBall(tx, b) {
   }
 
   tx.restore();
+
+  // Gold dents — drawn AFTER the squash transform restore so they stay
+  // pinned to the ball's actual world-space surface. (Inside the squash
+  // transform, every hit changes `squashAng` and visibly re-rotates every
+  // stored dent, which is why they looked like they weren't at the impact
+  // site.) Ball-local angle is converted to world via `b.angle + localAngle`.
+  if (mat.dentable && b.dents && b.dents.length) {
+    tx.save();
+    tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
+    for (const d of b.dents) {
+      const aa = b.angle + d.localAngle;
+      const cosA = Math.cos(aa), sinA = Math.sin(aa);
+      const dx = x + cosA * r * 0.80;
+      const dy = y + sinA * r * 0.80;
+      const dr = r * (0.22 + 0.30 * d.depth);
+      // 1. raised rim — hammered gold bulges outward around the pit
+      const rg = tx.createRadialGradient(dx, dy, dr * 0.75, dx, dy, dr * 1.15);
+      rg.addColorStop(0,   withAlpha('#6a4a10', 0));
+      rg.addColorStop(0.4, withAlpha('#ffe6a0', 0.45 * d.depth));
+      rg.addColorStop(1,   withAlpha('#6a4a10', 0));
+      tx.fillStyle = rg;
+      tx.beginPath(); tx.arc(dx, dy, dr * 1.15, 0, TAU); tx.fill();
+      // 2. dark crater body
+      const dg = tx.createRadialGradient(dx, dy, 0, dx, dy, dr);
+      dg.addColorStop(0,    withAlpha('#120700', 0.85 * d.depth));
+      dg.addColorStop(0.55, withAlpha('#3a2000', 0.55 * d.depth));
+      dg.addColorStop(1,    withAlpha('#3a2000', 0));
+      tx.fillStyle = dg;
+      tx.beginPath(); tx.arc(dx, dy, dr, 0, TAU); tx.fill();
+      // 3. inner-wall shadow crescent — the far side of the pit
+      const sx = dx + cosA * dr * 0.30;
+      const sy = dy + sinA * dr * 0.30;
+      const sg = tx.createRadialGradient(sx, sy, 0, sx, sy, dr * 0.70);
+      sg.addColorStop(0, withAlpha('#000000', 0.55 * d.depth));
+      sg.addColorStop(1, withAlpha('#000000', 0));
+      tx.fillStyle = sg;
+      tx.beginPath(); tx.arc(sx, sy, dr * 0.70, 0, TAU); tx.fill();
+    }
+    tx.restore();
+  }
 
   if (PHYS.showVec) {
     const sp = len(b.vx, b.vy);
