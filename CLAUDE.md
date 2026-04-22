@@ -15,14 +15,23 @@ realistic impulse-based ball dynamics. **Run with a static server** (see
 | Pinball flippers (angle + kick)    | `src/physics/flippers.js`                 |
 | Magnetism between balls            | `src/physics/forces.js::applyMagnetism`   |
 | Water ripples (spawn + decay)      | `src/physics/forces.js` + `src/render/world.js::drawWater` |
+| Conveyor-belt walls                | `src/physics/collisions.js::collideWall` (`wall.conveyorV`) |
 | Solver loop / field forces         | `src/physics/step.js` + `src/physics/forces.js` |
+| Attract / Push tool forces         | `src/physics/step.js` (in-loop per-ball) |
 | Broadphase (pair generation)       | `src/physics/broadphase.js`               |
 | How a ball is drawn                | `src/render/ball.js`                      |
 | Backgrounds / vortex / water / sun | `src/render/background.js`, `src/render/world.js` |
 | Bloom, grain, chromatic aberration | `src/render/postfx.js`                    |
+| Impact rings (expanding FX)        | `src/entities/particles.js::spawnImpact` + `src/render/effects.js` |
 | Telemetry mini-graphs              | `src/render/statsGraph.js` (generic sparkline) |
 | Mouse-tool behaviour               | `src/input/mouse.js` + `src/input/tools.js` |
-| Keyboard shortcuts                 | `src/input/keyboard.js` (arrows → flippers) |
+| Keyboard shortcuts                 | `src/input/keyboard.js` (arrows → flippers, Ctrl-Z → undo) |
+| Undo stack                         | `src/core/undo.js`                        |
+| Ball inspector panel               | `src/ui/inspector.js`                     |
+| Scene title fade overlay           | `src/ui/sceneTitle.js` (taglines live here) |
+| Save / Load / Screenshot           | `src/ui/save.js`                          |
+| Theme swaps (amber/cyan/violet/…)  | `src/core/theme.js` + `[data-theme]` CSS blocks |
+| Pref persistence (toggles, volume) | `src/core/persistence.js`                 |
 | HUD buttons / sliders              | `src/ui/*`                                |
 | Design tokens (color/spacing/font) | `styles/main.css` `:root` block           |
 | Ball stats (mass, heat, trail)     | `src/entities/ball.js`                    |
@@ -133,3 +142,10 @@ index.html
   to `span:not(.kbd)`, not `textContent` (see `ui/hud.js::setActionLabel`).
 - **Mode pill's text is inside `#mode-text`,** not `#mode-indicator` — the
   outer element also contains the pulsing dot.
+- **Tools are selected via `getTool()` each step** — do not cache the value
+  across frames. Changing tools mid-hold safely ends the previous hold.
+- **Prefs persist automatically** for toggles, theme, volume, and selected
+  material. Sim state (balls, walls) is saved only on explicit Save click.
+- **Impact rings are `type: 'ring'` particles** — rendered differently and
+  skipped by the step integrator's position update.
+- **Conveyor direction:** `wall.conveyorV > 0` drags toward (x2, y2).
