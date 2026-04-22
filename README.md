@@ -1,5 +1,7 @@
 # Sphere Lab
 
+**Live demo: [spherelab.clickdeeper.com](https://spherelab.clickdeeper.com/)**
+
 A browser-based 2D physics sandbox where ten materials — steel, rubber, glass,
 bowling, neon, gold, plasma, ice, magnet, mercury — interact across eighteen
 scenes. Built on HTML5 canvas with zero dependencies, modal impact-sound
@@ -8,7 +10,10 @@ iron-filing magnets, dented gold).
 
 ## Running it
 
-Any static file server works; ES modules won't load over `file://`.
+Fastest way: open the [live demo](https://spherelab.clickdeeper.com/).
+
+To run locally, any static file server works — ES modules won't load over
+`file://`:
 
 ```bash
 git clone <this-repo>
