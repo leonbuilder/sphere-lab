@@ -60,6 +60,20 @@ export class Ball {
     /** If the ball was spawned from a fracture, carry a separate flag so it
      *  doesn't recursively shatter and so the renderer can fade it out. */
     this.isFragment = false;
+
+    /** Rolling-resistance contact tracker — set to ~0.08 on every wall
+     *  collision, decays in step.js. Nonzero ⇒ apply per-material drag. */
+    this.groundT = 0;
+    /** Normal of the last contact surface. Rolling resistance damps only the
+     *  tangential component of velocity (the normal is gravity / bounce). */
+    this.contactNx = 0;
+    this.contactNy = 0;
+
+    /** Gold accumulates permanent dents from hard impacts. Each dent is
+     *  `{ localAngle, depth }` in ball-local rotation space, so dents rotate
+     *  with the ball. Lazily created on first hard hit; null until then. */
+    /** @type {{localAngle:number, depth:number}[] | null} */
+    this.dents = null;
   }
 
   kineticEnergy() {

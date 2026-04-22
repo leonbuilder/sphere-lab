@@ -13,7 +13,7 @@
  *   • `fluid` materials of the same kind merge on slow contact (mercury).
  */
 
-import { clamp, rand } from '../core/math.js';
+import { clamp, rand, TAU } from '../core/math.js';
 import { PHYS } from '../core/config.js';
 import {
   spawnImpact, spawnSparkle, spawnChip, spawnDust, spawnSmoke
@@ -23,6 +23,41 @@ import { velRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from
 import { stats } from './stats.js';
 import { wake, balls, Ball } from '../entities/ball.js';
 import { tryFracture } from './fracture.js';
+
+/** How many dents a gold ball can carry before new ones replace the oldest. */
+const MAX_DENTS = 9;
+/** Minimum impulse magnitude that leaves a dent on a dentable ball. */
+const DENT_THRESHOLD = 55;
+
+/**
+ * Accumulate a permanent dent on a dentable ball (currently only gold).
+ * The dent is stored in ball-local rotation space so it rotates with the
+ * ball instead of floating at a fixed world angle. Nearby impact angles
+ * merge into the existing dent (deepening it) rather than stacking.
+ *
+ * @param {import('../entities/ball.js').Ball} ball
+ * @param {number} worldAngle — angle from ball center to impact point (world)
+ * @param {number} magnitude  — impulse magnitude
+ */
+function addDent(ball, worldAngle, magnitude) {
+  if (!ball.mat.dentable || ball.isFragment) return;
+  if (magnitude < DENT_THRESHOLD) return;
+  if (!ball.dents) ball.dents = [];
+  const local = worldAngle - ball.angle;
+  for (const d of ball.dents) {
+    let diff = Math.abs(((d.localAngle - local) % TAU + TAU) % TAU);
+    if (diff > Math.PI) diff = TAU - diff;
+    if (diff < 0.32) {
+      d.depth = Math.min(1, d.depth + 0.10);
+      return;
+    }
+  }
+  if (ball.dents.length >= MAX_DENTS) ball.dents.shift();
+  ball.dents.push({
+    localAngle: local,
+    depth: clamp(0.28 + magnitude * 0.0015, 0.28, 0.9)
+  });
+}
 
 /** Dispatch material-specific visual debris for one contact. */
 function spawnImpactFor(mat, x, y, nx, ny, magnitude) {
@@ -179,12 +214,16 @@ export function collideBalls(a, b) {
       const dA = (a.mat.deform ?? 0.4);
       a.squash = 1 - Math.min(0.35 * dA, mag * 0.0025 * dA);
       a.squashAng = Math.atan2(ny, nx);
+      // The impact on `a` comes from the direction of `b` → contact point on
+      // a is at (nx, ny) side. That's where the dent sits.
+      addDent(a, Math.atan2(ny, nx), mag);
     }
     if (!bFractured) {
       spawnImpactFor(b.mat, hx, hy, -nx, -ny, mag);
       const dB = (b.mat.deform ?? 0.4);
       b.squash = 1 - Math.min(0.35 * dB, mag * 0.0025 * dB);
       b.squashAng = Math.atan2(-ny, -nx);
+      addDent(b, Math.atan2(-ny, -nx), mag);
     }
     if (!aFractured && !bFractured) Snd.collision(a, b, mag, Math.abs(vn));
   }
@@ -246,6 +285,13 @@ export function collideWall(b, wall) {
 
   wake(b);
 
+  // Rolling-resistance contact: every wall touch refreshes the contact
+  // timer so step.js can apply per-material tangential damping while the
+  // ball is rolling. Expires ~80 ms after the last contact.
+  b.groundT = 0.08;
+  b.contactNx = nx;
+  b.contactNy = ny;
+
   // chip emission on wall hits too
   if (b.mat.chip && Math.random() < b.mat.chip) spawnChip(cx, cy, nx, ny, 40, b.mat.color);
 
@@ -258,6 +304,7 @@ export function collideWall(b, wall) {
     const dF = (b.mat.deform ?? 0.4);
     b.squash = 1 - Math.min(0.4 * dF, Math.abs(vn) * 0.0008 * dF);
     b.squashAng = Math.atan2(ny, nx);
+    addDent(b, Math.atan2(ny, nx), mag);
     Snd.wall(b, mag, Math.abs(vn));
   }
   stats.collisions++;
@@ -292,11 +339,17 @@ export function collidePeg(b, peg) {
 
   wake(b);
 
+  // Pegs also count as rolling contact.
+  b.groundT = 0.08;
+  b.contactNx = nx;
+  b.contactNy = ny;
+
   if (tryFracture(b, Math.abs(vn))) return;
 
   const mag = Math.abs(vn) * b.mass;
   if (mag > 4) {
     spawnImpactFor(b.mat, peg.x + nx * peg.r, peg.y + ny * peg.r, nx, ny, mag);
+    addDent(b, Math.atan2(ny, nx), mag);
     if (peg.bumper) {
       b.vx += nx * 500 * invMass(b);
       b.vy += ny * 500 * invMass(b);

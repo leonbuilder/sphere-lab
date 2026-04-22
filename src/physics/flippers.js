@@ -85,6 +85,11 @@ export function collideFlipper(b, f) {
 
   wake(b);
 
+  // Flipper surface counts as a rolling contact for resistance.
+  b.groundT = 0.08;
+  b.contactNx = nx;
+  b.contactNy = ny;
+
   spawnImpact(cx, cy, nx, ny, Math.abs(vn) * b.mass, '#ffb340');
   // ball-on-flipper: the ball's own material voice + a small flipper-whack.
   // Only whack on real hits — a ball resting on a raised flipper re-enters

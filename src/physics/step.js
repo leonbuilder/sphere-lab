@@ -18,7 +18,7 @@ import { PHYS } from '../core/config.js';
 import { clamp, lerp, len, rand, pick } from '../core/math.js';
 import { balls, Ball, wake, SLEEP_DELAY, SLEEP_V, SLEEP_W } from '../entities/ball.js';
 import { MATERIALS, MAT_KEYS } from '../entities/materials.js';
-import { particles, spawnHeatShimmer } from '../entities/particles.js';
+import { particles, spawnHeatShimmer, spawnSmoke, spawnSparkle, spawnChip } from '../entities/particles.js';
 import { collideBalls, collideWall, collidePeg } from './collisions.js';
 import { updateFlippers, collideFlipper } from './flippers.js';
 import { applyVortex, applySolar, applyBuoyancy, applyMagnetism, stepRipples } from './forces.js';
@@ -54,12 +54,46 @@ export function physicsStep(dt) {
 
   for (const b of balls) {
     b.life += dt;
+    const mat = b.mat;
     // squash recovery rate depends on material: rubber recovers slowly (bouncy
     // memory), steel snaps back instantly (rigid).
-    const squashRate = 20 - (b.mat.deform || 0.4) * 15;
+    const squashRate = 20 - (mat.deform || 0.4) * 15;
     b.squash = lerp(b.squash, 1, clamp(dt * squashRate, 0, 1));
-    b.heat *= 0.996;
+
+    // Per-material heat cooling — metals hold heat, rubber sheds it quickly.
+    b.heat *= (mat.heatKeep ?? 0.996);
     if (b.heat > 0.3) { spawnHeatShimmer(b.x, b.y - b.r, b.heat); wake(b); }
+
+    // Material-specific heat visuals -----------------------------------
+    if (PHYS.heatFx && b.heat > 0.05 && !b.isFragment) {
+      const matName = mat.name;
+
+      // Ice melts: radius shrinks, mass follows, occasional water droplet.
+      // When it gets too small it's gone — water evaporated away.
+      if (matName === 'ICE' && b.heat > 0.2 && b.r > 3.2) {
+        const meltRate = (b.heat - 0.2) * 1.6;
+        const dr = meltRate * dt;
+        b.r = Math.max(3, b.r - dr);
+        b.mass = b.r * b.r * mat.density * 0.001;
+        b.inertia = 0.5 * b.mass * b.r * b.r;
+        b.area = Math.PI * b.r * b.r;
+        if (Math.random() < dt * meltRate * 25) {
+          spawnChip(b.x + rand(-b.r * 0.4, b.r * 0.4), b.y + b.r * 0.6, 0, 1, 30, '#7fc4ff');
+        }
+        if (b.r <= 3.05) { b._dead = true; continue; }
+      }
+      // Hot rubber smokes.
+      else if (matName === 'RUBBER' && b.heat > 0.45 && Math.random() < dt * 8) {
+        spawnSmoke(b.x + rand(-b.r * 0.5, b.r * 0.5), b.y - b.r * 0.3, 0, -15,
+                   'rgba(50,40,48,0.45)', 0.85);
+      }
+      // Hot metals throw small embers.
+      else if ((matName === 'STEEL' || matName === 'GOLD' || matName === 'MAGNET') && b.heat > 0.55 && Math.random() < dt * 10) {
+        const emberColor = matName === 'GOLD' ? '#ffd890' : matName === 'MAGNET' ? '#ff9060' : '#ffb060';
+        spawnSparkle(b.x + rand(-b.r * 0.4, b.r * 0.4), b.y + rand(-b.r * 0.4, b.r * 0.4),
+                     0, -1, 35, emberColor);
+      }
+    }
 
     // lifespan (fragments) — count down + mark for removal
     if (b.lifespan !== undefined) {
@@ -80,6 +114,22 @@ export function physicsStep(dt) {
 
     if (PHYS.gravityOn) b.vy += PHYS.gravity * dt;
     if (PHYS.wind)      b.vx += PHYS.wind * dt;
+
+    // Rolling resistance — only active while in sustained wall contact.
+    // Damps the tangential component of velocity (leaves normal alone so
+    // gravity / bounces behave correctly). Steel coasts, rubber grabs hard.
+    if (b.groundT > 0) {
+      b.groundT -= dt;
+      const rollK = mat.roll ?? 0.05;
+      const nx = b.contactNx, ny = b.contactNy;
+      const vn = b.vx * nx + b.vy * ny;
+      const vtx = b.vx - vn * nx;
+      const vty = b.vy - vn * ny;
+      const dampFac = Math.max(0, 1 - rollK * 3.2 * dt);
+      b.vx = vn * nx + vtx * dampFac;
+      b.vy = vn * ny + vty * dampFac;
+      b.omega *= Math.max(0, 1 - rollK * 5 * dt);
+    }
 
     applyVortex(b, dt);
     applySolar(b, dt);

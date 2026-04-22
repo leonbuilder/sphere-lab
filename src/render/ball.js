@@ -222,6 +222,48 @@ export function drawBall(tx, b) {
     tx.fillStyle = darken(bodyColor, 0.6);
     tx.beginPath(); tx.arc(mx, my, r * 0.13, 0, TAU); tx.fill();
   }
+
+  // Gold dents — permanent plastic deformation from hard hits. Drawn inside
+  // the ball clip so they conform to the silhouette. Each dent is a small
+  // dark depression with a faint highlight above it (simulating the edge
+  // catching light on the upper lip of the dent).
+  if (mat.dentable && b.dents && b.dents.length) {
+    for (const d of b.dents) {
+      const aa = b.angle + d.localAngle;
+      const dx = x + Math.cos(aa) * r * 0.82;
+      const dy = y + Math.sin(aa) * r * 0.82;
+      const dr = r * (0.15 + 0.25 * d.depth);
+      // core shadow of the dent
+      const dg = tx.createRadialGradient(dx, dy, 0, dx, dy, dr);
+      dg.addColorStop(0,    withAlpha('#2a1a00', 0.55 * d.depth));
+      dg.addColorStop(0.55, withAlpha('#2a1a00', 0.22 * d.depth));
+      dg.addColorStop(1,    withAlpha('#2a1a00', 0));
+      tx.fillStyle = dg;
+      tx.beginPath(); tx.arc(dx, dy, dr, 0, TAU); tx.fill();
+      // upper rim highlight — subtle glint just above center
+      const hx = dx - Math.cos(aa) * dr * 0.35;
+      const hy = dy - Math.sin(aa) * dr * 0.35;
+      const hg = tx.createRadialGradient(hx, hy, 0, hx, hy, dr * 0.55);
+      hg.addColorStop(0, withAlpha('#fff2c0', 0.35 * d.depth));
+      hg.addColorStop(1, withAlpha('#fff2c0', 0));
+      tx.fillStyle = hg;
+      tx.beginPath(); tx.arc(hx, hy, dr * 0.55, 0, TAU); tx.fill();
+    }
+  }
+
+  // Hot-metal forge glow — a directed orange/red inner lick when a metallic
+  // body is heated. Separate from the omni heat aura above; this sits
+  // inside the silhouette so it reads as "the metal itself is glowing".
+  if (PHYS.heatFx && b.heat > 0.4 && mat.metallic > 0.4) {
+    const hh = Math.min(1, (b.heat - 0.4) / 0.6);
+    const hgCol = mat.name === 'GOLD' ? '#ff9830' : '#ff5020';
+    const hg = tx.createRadialGradient(x, y, r * 0.05, x, y, r);
+    hg.addColorStop(0,    withAlpha(hgCol, 0.35 * hh));
+    hg.addColorStop(0.6,  withAlpha(hgCol, 0.18 * hh));
+    hg.addColorStop(1,    withAlpha(hgCol, 0));
+    tx.fillStyle = hg;
+    tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
+  }
   tx.restore();
 
   // outline
