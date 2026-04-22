@@ -1,0 +1,26 @@
+# Local AI agent state (Claude Code workspace settings)
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment / secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# Dependencies (project has none today, but safe to pre-exclude)
+node_modules/
+
+# Build output (none today, safe to pre-exclude)
+dist/
+build/
