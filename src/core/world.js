@@ -1,11 +1,5 @@
 /**
  * World + camera state. Reset by `clearWorld()` whenever a scene loads.
- *
- * `W` holds scene geometry and ambient modes (vortex, solar, water, flippers,
- * ripples). Scenes mutate it during build; the solver + renderer read it.
- *
- * `cam` holds current {x, y, zoom} and target {tx, ty, tz}. The main loop
- * smooths current toward target each frame.
  */
 
 import { balls } from '../entities/ball.js';
@@ -15,45 +9,31 @@ import { PHYS } from './config.js';
 /**
  * @typedef {Object} Wall
  * @property {number} x1 @property {number} y1 @property {number} x2 @property {number} y2
- * @property {boolean} [bouncy]   — wall gets 1.4× restitution + pink render
- * @property {boolean} [flipper]  — visual only, orange render
+ * @property {boolean} [bouncy]      — 1.4× restitution + pink render
+ * @property {boolean} [flipper]     — visual-only, orange render
+ * @property {number}  [conveyorV]   — tangential drag speed; positive = toward (x2,y2)
  */
 
-/**
- * @typedef {Object} Peg
+/** @typedef {Object} Peg
  * @property {number} x  @property {number} y  @property {number} r
- * @property {boolean} [bumper]  — pinball-style: 1.8× restitution + extra kick
- */
+ * @property {boolean} [bumper] */
 
-/**
- * @typedef {Object} Constraint
- * Inextensible tether from ball `a` to fixed anchor (ax, ay).
+/** @typedef {Object} Constraint
  * @property {import('../entities/ball.js').Ball} a
- * @property {number} ax @property {number} ay @property {number} len
- */
+ * @property {number} ax @property {number} ay @property {number} len */
 
-/**
- * @typedef {Object} Flipper
- * Rotating line segment pivoting at (px, py). `side` is -1 for left (swings
- * counter-clockwise when actuated) or +1 for right.
+/** @typedef {Object} Flipper
  * @property {number} px @property {number} py
  * @property {number} length
- * @property {number} angle       — current angle in radians
- * @property {number} angVel      — angular velocity
- * @property {number} restAngle   — resting (down) angle
- * @property {number} upAngle     — fully-up angle
- * @property {number} side        — -1 left, +1 right
- * @property {boolean} active     — held state
- */
+ * @property {number} angle @property {number} angVel
+ * @property {number} restAngle @property {number} upAngle
+ * @property {number} side
+ * @property {boolean} active */
 
 /** @typedef {Object} Ripple
- * @property {number} x       — horizontal origin along the water line
- * @property {number} amp     — current amplitude (decays over time)
- * @property {number} phase   — radians, advances each frame
- * @property {number} life    — seconds remaining
- */
+ * @property {number} x  @property {number} amp
+ * @property {number} phase @property {number} life */
 
-/** Single source of truth for scene state. */
 export const W = {
   cw: 0, ch: 0,
   /** @type {Wall[]} */        walls: [],
@@ -68,14 +48,12 @@ export const W = {
   vortexX: 0, vortexY: 0,
   solar: false,
   magnetic: false,
-  /** @type {number | undefined} — y of the water surface (undefined = no water). */
-  waterY: undefined,
+  /** @type {number | undefined} */ waterY: undefined,
   /** @type {Ripple[]} */ ripples: []
 };
 
 export const cam = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
 
-/** Convert CSS-pixel screen coords to world coords using the current camera. */
 export function screenToWorld(sx, sy) {
   return {
     x: (sx - W.cw / 2) / cam.zoom + cam.x,
@@ -83,7 +61,6 @@ export function screenToWorld(sx, sy) {
   };
 }
 
-/** Push 4 wall segments forming an axis-aligned rectangle (clockwise). */
 export function addBox(x, y, w, h) {
   W.walls.push(
     { x1: x,     y1: y,     x2: x + w, y2: y     },
@@ -93,10 +70,6 @@ export function addBox(x, y, w, h) {
   );
 }
 
-/**
- * Reset everything scene-scoped. Pools are cleared via `length = 0` to preserve
- * array identity — other modules hold the same reference.
- */
 export function clearWorld() {
   balls.length = 0;
   W.walls.length = 0;
@@ -112,7 +85,6 @@ export function clearWorld() {
   W.waterY = undefined;
 }
 
-/** Keep the HUD gravity action button in sync when scenes flip gravity. */
 export function setGravityUI(on, g) {
   PHYS.gravityOn = on;
   if (typeof g === 'number') {

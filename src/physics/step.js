@@ -1,18 +1,5 @@
 /**
- * Fixed-timestep physics integration. Called by `loop.js` at 240 Hz via an
- * accumulator.
- *
- * Order per step:
- *   1. Rain-spawn drop (if scene asks for it).
- *   2. Flipper angular update.
- *   3. Magnetism pass (global ball↔ball).
- *   4. Ripple aging.
- *   5. Per-ball integration: forces → drag → Magnus → cap → CCD sub-step
- *      against walls + pegs + flippers.
- *   6. Spring + pendulum-constraint iterations.
- *   7. Ball/ball broadphase + multi-iteration contact solve.
- *   8. Particle integration + culling.
- *   9. Cull escaped balls.
+ * Fixed-timestep physics integration. Called by `loop.js` at 240 Hz.
  */
 
 import { W } from '../core/world.js';
@@ -29,7 +16,7 @@ import { mouse } from '../input/mouse.js';
 import { getTool } from '../input/tools.js';
 
 export function physicsStep(dt) {
-  // continuous drop for rain / galton
+  // rain / galton drip
   if (W.rainSpawn && Math.random() < 0.1 && balls.length < 200) {
     const mat = MATERIALS[pick(MAT_KEYS)];
     const b = new Ball(rand(W.cw * 0.1, W.cw * 0.9), 60, rand(7, 16), mat);
@@ -63,12 +50,26 @@ export function physicsStep(dt) {
     applySolar(b, dt);
     applyBuoyancy(b, dt);
 
+    // push tool — radial repel inside 200px
     if (mouse.down && TOOL === 'push') {
       const dx = b.x - mouse.wx, dy = b.y - mouse.wy;
       const d2 = dx * dx + dy * dy;
       if (d2 < 200 * 200) {
         const d = Math.sqrt(d2) || 0.001;
         const f = (200 - d) * 800 / b.mass;
+        b.vx += dx / d * f * dt;
+        b.vy += dy / d * f * dt;
+      }
+    }
+    // attract tool — radial pull inside 300px, with a minimum radius so balls
+    // don't get infinite acceleration at the cursor
+    if (mouse.down && TOOL === 'attract') {
+      const dx = mouse.wx - b.x, dy = mouse.wy - b.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 300 * 300 && d2 > 400) {
+        const d = Math.sqrt(d2);
+        const falloff = 1 - d / 300;
+        const f = 1400 * falloff / b.mass;
         b.vx += dx / d * f * dt;
         b.vy += dy / d * f * dt;
       }
@@ -85,7 +86,7 @@ export function physicsStep(dt) {
     b.vx *= dragFactor; b.vy *= dragFactor;
     b.omega *= Math.max(0, 1 - PHYS.drag * dt * 0.8);
 
-    // 2D Magnus with velocity snapshot
+    // Magnus with velocity snapshot
     if (vmag > 10 && Math.abs(b.omega) > 0.1) {
       const magK = PHYS.magnus * 0.002;
       const mvx = -b.vy * b.omega * magK * dt;
@@ -94,12 +95,11 @@ export function physicsStep(dt) {
       b.vy += mvy;
     }
 
-    // speed cap
     const spd = len(b.vx, b.vy);
     const maxV = 4000;
     if (spd > maxV) { b.vx *= maxV / spd; b.vy *= maxV / spd; }
 
-    // CCD sub-step
+    // CCD substep
     const steps = Math.max(1, Math.ceil(spd * dt / (b.r * 0.6)));
     const sdt = dt / steps;
     b.px = b.x; b.py = b.y;
@@ -124,7 +124,6 @@ export function physicsStep(dt) {
     }
   }
 
-  // springs + pendulum tethers
   const springIters = W.springs.length > 200 ? 3 : 6;
   for (let i = 0; i < springIters; i++) {
     for (const s of W.springs) s.solve(dt / springIters * 4);
@@ -145,7 +144,6 @@ export function physicsStep(dt) {
     }
   }
 
-  // narrowphase
   if (balls.length > 0) {
     const pairs = buildPairs();
     const iters = balls.length > 120 ? 2 : 3;
@@ -154,16 +152,18 @@ export function physicsStep(dt) {
     }
   }
 
-  // particles
   for (const p of particles) {
     p.life -= dt;
-    p.x += p.vx * dt;
-    p.y += p.vy * dt;
+    // rings don't move; sparks + smoke do
+    if (p.type !== 'ring') {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
     if (p.type === 'smoke') {
       p.size *= 1 + dt * 0.4;
       p.vx *= 1 - dt * 1.2;
       p.vy *= 1 - dt * 1.2;
-    } else {
+    } else if (p.type === 'spark') {
       p.vx *= 1 - dt * 0.6;
       p.vy *= 1 - dt * 0.6;
       if (PHYS.gravityOn) p.vy += 400 * dt;
@@ -171,7 +171,6 @@ export function physicsStep(dt) {
   }
   for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
 
-  // cull escaped
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];
     if (b.x < -800 || b.x > W.cw + 800 || b.y > W.ch + 600 || b.y < -500) {

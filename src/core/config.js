@@ -1,23 +1,20 @@
 /**
- * Mutable global physics + render toggles.
- * Every frame reads from `PHYS`. UI sliders mutate `PHYS` live.
- *
- * This module is intentionally tiny. If you find yourself adding logic here,
- * it probably belongs somewhere else.
+ * Mutable global physics + render toggles + audio/UX settings.
+ * Every frame reads from `PHYS`. UI sliders/toggles and persistence mutate it live.
  */
 
 /**
  * @typedef {Object} PhysConfig
  * Sim parameters:
- * @property {number} gravity        — px/s² downward
- * @property {number} drag           — linear drag coefficient (0..~0.5)
- * @property {number} restitutionMul — global bounciness multiplier
- * @property {number} frictionMul    — global friction multiplier
- * @property {number} magnus         — Magnus effect strength
- * @property {number} wind           — horizontal wind acceleration (px/s²)
- * @property {number} spawnRadius    — default spawn radius
+ * @property {number} gravity
+ * @property {number} drag
+ * @property {number} restitutionMul
+ * @property {number} frictionMul
+ * @property {number} magnus
+ * @property {number} wind
+ * @property {number} spawnRadius
  * @property {boolean} gravityOn
- * @property {number} slowmo         — time-scale multiplier (1 = normal)
+ * @property {number} slowmo
  * @property {boolean} paused
  * Render toggles:
  * @property {boolean} motionBlur  @property {boolean} trails     @property {boolean} showVec
@@ -25,6 +22,8 @@
  * @property {boolean} refract     @property {boolean} heatFx     @property {boolean} ao
  * @property {boolean} aberration  @property {boolean} grain      @property {boolean} streaks
  * @property {boolean} flare
+ * Audio:
+ * @property {number} volume   — 0..1 master gain
  */
 
 /** @type {PhysConfig} */
@@ -34,8 +33,13 @@ export const PHYS = {
   gravityOn: true, slowmo: 1, paused: false,
   motionBlur: false, trails: false, showVec: false,
   bloom: true, shadow: true, sound: true, refract: true, heatFx: true,
-  ao: true, aberration: true, grain: true, streaks: true, flare: true
+  ao: true, aberration: true, grain: true, streaks: true, flare: true,
+  volume: 0.25
 };
 
-/** Keyboard → tool id (matches the QWERTY row under the tool buttons). */
-export const TOOL_KEYS = { q: 'spawn', w: 'grab', e: 'draw', r: 'erase', t: 'link', y: 'pin', u: 'push', i: 'heat' };
+/** Keyboard → tool id (matches the tool grid in index.html). */
+export const TOOL_KEYS = {
+  q: 'spawn',   w: 'grab',   e: 'draw',   r: 'erase',
+  t: 'link',    y: 'pin',    u: 'push',   o: 'attract',
+  i: 'heat'
+};

@@ -1,20 +1,16 @@
 /**
- * Screen-space effects that aren't per-ball and aren't post-process:
- *   drawAO        — fake AO darkening the gap between nearby balls
- *   drawParticles — sparks + smoke
+ * Screen-space effects:
+ *   drawAO        — fake AO in the gap between close balls
+ *   drawParticles — sparks + smoke + impact rings
  *   drawLensFlares— additive streaks on bright sources (glowy balls + sun)
  */
 
-import { W, cam } from '../core/world.js';
+import { W } from '../core/world.js';
 import { PHYS } from '../core/config.js';
-import { TAU, clamp } from '../core/math.js';
+import { TAU, clamp, lerp } from '../core/math.js';
 import { balls } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
 
-/**
- * Cheap screen-space ambient occlusion: darken the gap between pairs of balls
- * that are close but not overlapping. O(n²) but capped by the 260-ball cap.
- */
 export function drawAO(tx) {
   if (!PHYS.ao || balls.length < 2) return;
   tx.save();
@@ -29,7 +25,7 @@ export function drawAO(tx) {
       const near = rsum * 1.6;
       if (d2 > near * near) continue;
       const d = Math.sqrt(d2) || 0.001;
-      if (d < rsum * 0.98) continue; // overlapping case handled by collision
+      if (d < rsum * 0.98) continue;
       const t = clamp(1 - (d - rsum) / (near - rsum), 0, 1);
       const mx = (a.x + b.x) * 0.5;
       const my = (a.y + b.y) * 0.5;
@@ -50,8 +46,9 @@ export function drawParticles(tx) {
     if (p.life <= 0) continue;
     const a = p.life / p.maxLife;
     tx.globalAlpha = a;
-    tx.fillStyle = p.color;
+
     if (p.type === 'spark') {
+      tx.fillStyle = p.color;
       tx.beginPath();
       tx.arc(p.x, p.y, p.size * a, 0, TAU);
       tx.fill();
@@ -63,12 +60,18 @@ export function drawParticles(tx) {
       tx.beginPath();
       tx.arc(p.x, p.y, p.size, 0, TAU);
       tx.fill();
+    } else if (p.type === 'ring') {
+      // expanding circle outline that fades as it grows
+      const rr = lerp(p.ringR0 ?? 0, p.ringR1 ?? 40, 1 - a);
+      tx.globalAlpha = a * 0.9;
+      tx.strokeStyle = p.color;
+      tx.lineWidth = 2 * a + 0.5;
+      tx.beginPath(); tx.arc(p.x, p.y, rr, 0, TAU); tx.stroke();
     }
   }
   tx.globalAlpha = 1;
 }
 
-/** Additive halo + rotating cross rays on bright sources. */
 export function drawLensFlares(tx) {
   if (!PHYS.flare) return;
   tx.save();

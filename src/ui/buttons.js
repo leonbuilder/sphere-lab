@@ -1,5 +1,7 @@
 /**
- * Wire up scene tabs, tool grid, action buttons, and visual toggles.
+ * Wire up scene tabs, tool grid, action buttons, visual toggles, theme
+ * swatches, and the save/load/snapshot buttons.
+ *
  * Called once at init from `src/main.js`.
  */
 
@@ -10,6 +12,10 @@ import { particles } from '../entities/particles.js';
 import { loadScene } from '../scenes/index.js';
 import { setTool } from '../input/tools.js';
 import { updatePauseBtn, updateSlowmoBtn, updateToggle } from './hud.js';
+import { undo } from '../core/undo.js';
+import { applyTheme } from '../core/theme.js';
+import { savePref } from '../core/persistence.js';
+import { saveState, loadState, screenshot } from './save.js';
 
 export function bindButtons() {
   // scene tabs
@@ -22,15 +28,26 @@ export function bindButtons() {
   document.getElementById('btn-clear').onclick = () => {
     balls.length = 0; particles.length = 0; W.springs.length = 0;
   };
-  document.getElementById('btn-pause').onclick = () => { PHYS.paused = !PHYS.paused; updatePauseBtn(); };
+  document.getElementById('btn-pause').onclick  = () => { PHYS.paused = !PHYS.paused; updatePauseBtn(); };
   document.getElementById('btn-slowmo').onclick = () => {
     PHYS.slowmo = PHYS.slowmo === 1 ? 0.15 : 1;
     updateSlowmoBtn();
   };
-  document.getElementById('btn-gravity').onclick = () => { PHYS.gravityOn = !PHYS.gravityOn; setGravityUI(PHYS.gravityOn); };
+  document.getElementById('btn-gravity').onclick   = () => { PHYS.gravityOn = !PHYS.gravityOn; setGravityUI(PHYS.gravityOn); };
   document.getElementById('btn-reset-cam').onclick = () => { cam.tx = W.cw / 2; cam.ty = W.ch / 2; cam.tz = 1; };
+  document.getElementById('btn-undo').onclick      = () => { undo(); };
 
-  // visual toggles → PHYS boolean flag
+  // settings — theme dots
+  document.querySelectorAll('.theme-dot').forEach(el => {
+    el.addEventListener('click', () => applyTheme(el.getAttribute('data-theme')));
+  });
+
+  // settings — save / load / snapshot
+  document.getElementById('btn-snapshot').onclick = () => screenshot();
+  document.getElementById('btn-save').onclick     = () => saveState();
+  document.getElementById('btn-load').onclick     = () => loadState();
+
+  // visual toggles → PHYS boolean flag + persistence
   const toggles = [
     ['t-bloom',      'bloom'],
     ['t-shadow',     'shadow'],
@@ -48,7 +65,11 @@ export function bindButtons() {
   ];
   for (const [id, k] of toggles) {
     const b = document.getElementById(id);
-    b.onclick = () => { PHYS[k] = !PHYS[k]; updateToggle(id, PHYS[k]); };
+    b.onclick = () => {
+      PHYS[k] = !PHYS[k];
+      updateToggle(id, PHYS[k]);
+      savePref(id, PHYS[k]);
+    };
   }
 
   // help overlay

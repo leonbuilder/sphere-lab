@@ -290,10 +290,10 @@ html, body {
   border-color: var(--accent-soft);
 }
 
-/* tool button — icon + label, wider variant for tool grid */
+/* tool button — icon + label, 3×3 grid to fit 9 tools */
 .tool-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--s-2);
 }
 
@@ -696,4 +696,233 @@ input[type=range]:active::-webkit-slider-thumb { cursor: grabbing; transform: sc
 /* responsive: hide side panels on narrow screens */
 @media (max-width: 900px) {
   .panel-left, .panel-right { display: none; }
+}
+
+/* =========================================================================
+   THEME PRESETS — swap the accent + info tokens at the :root level so every
+   downstream color (buttons, graphs, tooltips, lens-flare sources) follows.
+   ========================================================================= */
+
+html[data-theme="cyan"] {
+  --accent:       #56d4ff;
+  --accent-soft:  rgba(86, 212, 255, 0.18);
+  --accent-ghost: rgba(86, 212, 255, 0.08);
+  --info:         #b285ff;
+  --info-soft:    rgba(178, 133, 255, 0.18);
+}
+
+html[data-theme="violet"] {
+  --accent:       #c878ff;
+  --accent-soft:  rgba(200, 120, 255, 0.18);
+  --accent-ghost: rgba(200, 120, 255, 0.08);
+  --info:         #ff6fa5;
+  --info-soft:    rgba(255, 111, 165, 0.18);
+}
+
+html[data-theme="forest"] {
+  --accent:       #7ae09e;
+  --accent-soft:  rgba(122, 224, 158, 0.18);
+  --accent-ghost: rgba(122, 224, 158, 0.08);
+  --info:         #ffd07a;
+  --info-soft:    rgba(255, 208, 122, 0.18);
+}
+
+/* ---- theme swatches in Settings section ---- */
+.theme-row {
+  display: flex;
+  gap: var(--s-3);
+  padding: var(--s-2);
+}
+.theme-dot {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.12s var(--ease), border-color 0.12s var(--ease);
+}
+.theme-dot:hover { transform: scale(1.12); }
+.theme-dot.active { border-color: var(--text-0); box-shadow: 0 0 14px currentColor; }
+.theme-dot[data-theme="amber"]  { background: #ffaa33; color: #ffaa33; }
+.theme-dot[data-theme="cyan"]   { background: #56d4ff; color: #56d4ff; }
+.theme-dot[data-theme="violet"] { background: #c878ff; color: #c878ff; }
+.theme-dot[data-theme="forest"] { background: #7ae09e; color: #7ae09e; }
+
+/* =========================================================================
+   TOOLTIPS — any element with [data-tip] shows a small pill on hover.
+   ========================================================================= */
+
+[data-tip] { position: relative; }
+
+[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 4px 9px;
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  border: 1px solid var(--stroke-c);
+  border-radius: var(--r-2);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s var(--ease), transform 0.12s var(--ease);
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
+}
+
+[data-tip]:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+[data-tip-side="right"]::after {
+  bottom: 50%;
+  left: calc(100% + 6px);
+  transform: translateY(50%) translateX(-4px);
+}
+[data-tip-side="right"]:hover::after {
+  transform: translateY(50%) translateX(0);
+}
+
+[data-tip-side="bottom"]::after {
+  top: calc(100% + 6px);
+  bottom: auto;
+  transform: translateX(-50%) translateY(-4px);
+}
+[data-tip-side="bottom"]:hover::after {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* =========================================================================
+   SCENE TITLE OVERLAY — big center title that fades in when a scene loads.
+   ========================================================================= */
+
+.scene-title {
+  position: fixed;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.35s var(--ease);
+}
+.scene-title.show {
+  opacity: 1;
+  animation: scene-pulse 2s var(--ease);
+}
+
+.scene-title .st-title {
+  font-family: var(--font-mono);
+  font-size: 44px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  color: var(--accent);
+  text-shadow: 0 0 30px var(--accent-soft);
+  text-transform: uppercase;
+}
+.scene-title .st-sub {
+  margin-top: var(--s-3);
+  font-size: 13px;
+  color: var(--text-1);
+  letter-spacing: 0.12em;
+}
+
+@keyframes scene-pulse {
+  0%   { opacity: 0;   transform: translate(-50%, -40%); }
+  15%  { opacity: 1;   transform: translate(-50%, -50%); }
+  70%  { opacity: 1;   transform: translate(-50%, -50%); }
+  100% { opacity: 0;   transform: translate(-50%, -58%); }
+}
+
+/* =========================================================================
+   BALL INSPECTOR — floating card that follows cursor when over a ball.
+   ========================================================================= */
+
+.inspector {
+  position: fixed;
+  pointer-events: none;
+  display: none;
+  padding: var(--s-4);
+  min-width: 180px;
+  background: rgba(13, 17, 27, 0.95);
+  border: 1px solid var(--stroke-c);
+  border-radius: var(--r-3);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--shadow-md);
+  z-index: 6;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  transition: opacity 0.1s var(--ease);
+}
+.inspector.show { display: block; }
+
+.inspector .ins-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding-bottom: var(--s-3);
+  border-bottom: 1px solid var(--stroke-b);
+  margin-bottom: var(--s-3);
+}
+.inspector .ins-swatch {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+}
+.inspector .ins-name {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--text-0);
+  text-transform: uppercase;
+}
+.inspector .ins-id {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-3);
+}
+.inspector .ins-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+}
+.inspector .ins-grid .k { color: var(--text-2); }
+.inspector .ins-grid .v {
+  text-align: right;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.inspector .ins-heat-bar {
+  margin-top: var(--s-3);
+  height: 4px;
+  background: var(--bg-0);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.inspector .ins-heat-bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffaa33, #ff4020);
+  transition: width 0.12s var(--ease);
+}
+
+/* ========================================================================= */
+/* narrow action-btn variant — used for the Settings row of small buttons */
+.action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--s-2);
+}
+.action-row .action-btn {
+  padding: var(--s-2) var(--s-3);
+  font-size: 11px;
+  justify-content: center;
 }

@@ -1,9 +1,7 @@
 /**
- * World-geometry drawing: walls, pegs, constraint tethers, springs, flippers,
- * vortex FX, water surface (with live ripples), solar sun glow,
- * and ball ground shadows.
- *
- * Everything here reads from `W` (core/world.js). No simulation writes.
+ * World-geometry drawing: walls (incl. conveyor belts with animated chevrons),
+ * pegs, constraints, springs, flippers, vortex FX, water (with ripples),
+ * solar sun glow, ball ground shadows.
  */
 
 import { W } from '../core/world.js';
@@ -13,11 +11,11 @@ import { mix } from '../core/color.js';
 import { balls } from '../entities/ball.js';
 
 export function drawWalls(tx) {
-  tx.strokeStyle = '#4a607c';
   tx.shadowColor = '#8fd0ff'; tx.shadowBlur = 4;
   tx.lineWidth = 3; tx.lineCap = 'round';
   for (const w of W.walls) {
-    if (w.bouncy)       tx.strokeStyle = '#ff7aa8';
+    if (w.conveyorV)    tx.strokeStyle = '#56d4ff';
+    else if (w.bouncy)  tx.strokeStyle = '#ff7aa8';
     else if (w.flipper) tx.strokeStyle = '#ffb340';
     else                tx.strokeStyle = '#4a607c';
     tx.beginPath(); tx.moveTo(w.x1, w.y1); tx.lineTo(w.x2, w.y2); tx.stroke();
@@ -28,12 +26,32 @@ export function drawWalls(tx) {
   for (const w of W.walls) {
     tx.beginPath(); tx.moveTo(w.x1, w.y1); tx.lineTo(w.x2, w.y2); tx.stroke();
   }
+
+  // animated conveyor chevrons — > > > crawling along the belt in the direction of motion
+  const t = performance.now() * 0.001;
+  for (const w of W.walls) {
+    if (!w.conveyorV) continue;
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
+    const L = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / L, uy = dy / L;       // along-belt unit
+    const nx = -uy, ny = ux;              // belt-offset unit
+    const sign = Math.sign(w.conveyorV);
+    const crawl = ((t * Math.abs(w.conveyorV) * 0.01) % 30);
+    tx.strokeStyle = 'rgba(200, 240, 255, 0.55)';
+    tx.lineWidth = 1.2;
+    for (let d = -crawl; d < L; d += 30) {
+      if (d < 5 || d > L - 5) continue;
+      const cx = w.x1 + ux * d, cy = w.y1 + uy * d;
+      const tipX = cx + ux * 6 * sign,   tipY = cy + uy * 6 * sign;
+      const a1X  = cx - ux * 2 * sign + nx * 4, a1Y = cy - uy * 2 * sign + ny * 4;
+      const a2X  = cx - ux * 2 * sign - nx * 4, a2Y = cy - uy * 2 * sign - ny * 4;
+      tx.beginPath();
+      tx.moveTo(a1X, a1Y); tx.lineTo(tipX, tipY); tx.lineTo(a2X, a2Y);
+      tx.stroke();
+    }
+  }
 }
 
-/**
- * Pinball flippers — drawn as a stubby line capped with a knob at the pivot
- * and a rounded tip. Orange with a glow so they read as interactive.
- */
 export function drawFlippers(tx) {
   for (const f of W.flippers) {
     const x2 = f.px + Math.cos(f.angle) * f.length;
@@ -48,7 +66,6 @@ export function drawFlippers(tx) {
     tx.beginPath(); tx.moveTo(f.px, f.py); tx.lineTo(x2, y2); tx.stroke();
     tx.restore();
 
-    // pivot knob
     tx.fillStyle = '#2a1a08';
     tx.beginPath(); tx.arc(f.px, f.py, 5, 0, TAU); tx.fill();
     tx.strokeStyle = '#ffb340'; tx.lineWidth = 1;
@@ -117,11 +134,6 @@ export function drawSprings(tx) {
   tx.globalAlpha = 1;
 }
 
-/**
- * Water surface: the baseline y is `W.waterY`, displaced by the sum of all
- * active ripples' contributions at each x. Each ripple is a radial wave
- * emanating from its origin along the surface.
- */
 export function drawWater(tx) {
   if (W.waterY === undefined) return;
   const y = W.waterY;
@@ -133,13 +145,10 @@ export function drawWater(tx) {
   tx.fillRect(0, y, W.cw, W.ch - y);
 
   const t = performance.now() * 0.0012;
-
-  // sample surface including ripple contributions
   const sample = x => {
     let dy = Math.sin(x * 0.015 + t * 2) * 4 + Math.sin(x * 0.04 + t * 3.1) * 2;
     for (const r of W.ripples) {
       const dist = Math.abs(x - r.x);
-      // wave travels ~160 px/s outward; amplitude falls with distance
       const leading = r.phase * 160;
       const env = Math.max(0, 1 - Math.abs(dist - leading) / 140);
       dy += Math.sin(dist * 0.08 - r.phase * 6) * r.amp * env;
@@ -156,7 +165,6 @@ export function drawWater(tx) {
   }
   tx.stroke();
 
-  // thinner inner glow line
   tx.strokeStyle = 'rgba(255,255,255,0.25)';
   tx.lineWidth = 1;
   tx.beginPath();
@@ -166,7 +174,6 @@ export function drawWater(tx) {
   }
   tx.stroke();
 
-  // caustics
   tx.globalCompositeOperation = 'screen';
   for (let i = 0; i < 6; i++) {
     const cx = ((i * 223 + t * 80) % W.cw);

@@ -1,19 +1,9 @@
 /**
  * Mouse state + all canvas mouse/wheel handlers.
  *
- * Exported state:
- *   mouse.x,   mouse.y        — screen coords (CSS px)
- *   mouse.wx,  mouse.wy       — world coords
- *   mouse.down, right, middle — button state
- *   mouse.shift               — shift pressed at last mousedown
- *   mouse.sx,  mouse.sy       — drag-start in screen coords
- *   mouse.wsx, mouse.wsy      — drag-start in world coords
- *   mouse.grab                — ball currently being held
- *   mouse.linkFirst           — first ball picked in LINK tool
- *   mouse.draw                — { x1, y1, active } for the DRAW tool
- *
- * `step.js` reads `mouse` + `getTool()` each frame for the PUSH/HEAT tools.
- * `main.js` reads `mouse` for the slingshot preview.
+ * Side-effects mutate the undo stack when the user creates new state
+ * (spawned balls, drawn walls, linked springs) — Ctrl-Z in keyboard.js
+ * pops and reverses.
  */
 
 import { clamp, len, rand } from '../core/math.js';
@@ -24,6 +14,7 @@ import { Spring } from '../entities/spring.js';
 import { Snd } from '../audio/sound.js';
 import { explode } from '../physics/explode.js';
 import { getTool, ballAt, wallAt } from './tools.js';
+import { pushUndo } from '../core/undo.js';
 
 export const mouse = {
   x: 0, y: 0, wx: 0, wy: 0,
@@ -55,9 +46,11 @@ canvas.addEventListener('mousedown', e => {
     const b = ballAt(mouse.wx, mouse.wy);
     if (b) {
       if (TOOL === 'pin') {
+        const was = b.pinned;
         b.pinned = !b.pinned;
         b.vx = b.vy = b.omega = 0;
         Snd.click();
+        pushUndo(() => { b.pinned = was; });
       } else {
         mouse.grab = b;
         b.grabbed = true;
@@ -67,7 +60,6 @@ canvas.addEventListener('mousedown', e => {
   }
 
   if (TOOL === 'spawn') {
-    // click on an existing ball = grab it (shorthand — no tool switch needed)
     const b = ballAt(mouse.wx, mouse.wy);
     if (b) { mouse.grab = b; b.grabbed = true; return; }
   }
@@ -77,8 +69,13 @@ canvas.addEventListener('mousedown', e => {
     if (b) {
       if (mouse.linkFirst && mouse.linkFirst !== b) {
         const d = Math.hypot(mouse.linkFirst.x - b.x, mouse.linkFirst.y - b.y);
-        W.springs.push(new Spring(mouse.linkFirst, b, d, 0.6, 0.1));
+        const s = new Spring(mouse.linkFirst, b, d, 0.6, 0.1);
+        W.springs.push(s);
         Snd.spring();
+        pushUndo(() => {
+          const i = W.springs.indexOf(s);
+          if (i >= 0) W.springs.splice(i, 1);
+        });
         mouse.linkFirst = null;
       } else {
         mouse.linkFirst = b;
@@ -92,7 +89,6 @@ canvas.addEventListener('mousedown', e => {
     if (b) {
       const i = balls.indexOf(b);
       if (i >= 0) balls.splice(i, 1);
-      // also drop any linkers/tethers that referenced this ball
       W.springs = W.springs.filter(s => s.a !== b && s.b !== b);
       W.constraints = W.constraints.filter(c => c.a !== b);
       Snd.click();
@@ -128,7 +124,6 @@ canvas.addEventListener('mouseup', e => {
   const TOOL = getTool();
 
   if (mouse.grab) {
-    // flick impulse — distance travelled during the grab becomes velocity
     const dx = mouse.wx - mouse.grab.x;
     const dy = mouse.wy - mouse.grab.y;
     mouse.grab.vx += dx * 10;
@@ -142,8 +137,13 @@ canvas.addEventListener('mouseup', e => {
     const dx = mouse.wx - mouse.draw.x1;
     const dy = mouse.wy - mouse.draw.y1;
     if (dx * dx + dy * dy > 100) {
-      W.walls.push({ x1: mouse.draw.x1, y1: mouse.draw.y1, x2: mouse.wx, y2: mouse.wy });
+      const wall = { x1: mouse.draw.x1, y1: mouse.draw.y1, x2: mouse.wx, y2: mouse.wy };
+      W.walls.push(wall);
       Snd.click();
+      pushUndo(() => {
+        const i = W.walls.indexOf(wall);
+        if (i >= 0) W.walls.splice(i, 1);
+      });
     }
     mouse.draw.active = false;
     return;
@@ -153,15 +153,29 @@ canvas.addEventListener('mouseup', e => {
     const dx = mouse.wsx - mouse.wx;
     const dy = mouse.wsy - mouse.wy;
     const d = len(dx, dy);
+    /** Track every ball spawned in this release so Ctrl-Z undoes them as a batch. */
+    const spawned = [];
     if (d < 5) {
       if (mouse.shift) {
-        for (let i = 0; i < 10; i++) spawnBall(mouse.wx + rand(-20, 20), mouse.wy + rand(-20, 20));
+        for (let i = 0; i < 10; i++) {
+          const b = spawnBall(mouse.wx + rand(-20, 20), mouse.wy + rand(-20, 20));
+          if (b) spawned.push(b);
+        }
       } else {
-        spawnBall(mouse.wsx, mouse.wsy);
+        const b = spawnBall(mouse.wsx, mouse.wsy);
+        if (b) spawned.push(b);
       }
     } else {
       const b = spawnBall(mouse.wsx, mouse.wsy);
-      if (b) { b.vx = dx * 6; b.vy = dy * 6; }
+      if (b) { b.vx = dx * 6; b.vy = dy * 6; spawned.push(b); }
+    }
+    if (spawned.length) {
+      pushUndo(() => {
+        for (const b of spawned) {
+          const i = balls.indexOf(b);
+          if (i >= 0) balls.splice(i, 1);
+        }
+      });
     }
   }
 });
@@ -171,7 +185,6 @@ canvas.addEventListener('wheel', e => {
   const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
   const oldZoom = cam.tz;
   const newZoom = clamp(cam.tz * factor, 0.3, 5);
-  // zoom at cursor — keep the world point under the cursor fixed
   const wb = screenToWorld(e.clientX, e.clientY);
   cam.tz = newZoom;
   cam.tx += (wb.x - cam.tx) * (1 - oldZoom / newZoom);

@@ -1,8 +1,6 @@
 /**
- * Active tool + hit-testing helpers.
- *
- * `getTool()` is how every other module reads the current tool — a function
- * instead of a live-binding export for clarity.
+ * Active tool + hit-testing helpers. Exposed via `getTool()` so callers
+ * always see the latest value.
  */
 
 import { clamp } from '../core/math.js';
@@ -10,14 +8,14 @@ import { balls } from '../entities/ball.js';
 import { W } from '../core/world.js';
 import { canvas } from '../render/canvas.js';
 
-/** @typedef {'spawn'|'grab'|'draw'|'erase'|'link'|'pin'|'push'|'heat'} ToolId */
+/** @typedef {'spawn'|'grab'|'draw'|'erase'|'link'|'pin'|'push'|'attract'|'heat'} ToolId */
 
 /** @type {ToolId} */
 let TOOL = 'spawn';
 
 const LABELS = {
   spawn: 'Spawn', grab: 'Grab', draw: 'Draw', erase: 'Erase',
-  link: 'Link', pin: 'Pin', push: 'Push', heat: 'Heat'
+  link: 'Link', pin: 'Pin', push: 'Push', attract: 'Attract', heat: 'Heat'
 };
 
 export function getTool() { return TOOL; }
@@ -28,13 +26,13 @@ export function setTool(t) {
   document.getElementById('stat-tool').textContent = LABELS[t] || t;
   document.getElementById('mode-text').textContent = (LABELS[t] || t) + ' mode';
   canvas.style.cursor =
-    t === 'grab'  ? 'grab'        :
-    t === 'draw'  ? 'crosshair'   :
-    t === 'erase' ? 'not-allowed' :
-                    'crosshair';
+    t === 'grab'    ? 'grab'        :
+    t === 'draw'    ? 'crosshair'   :
+    t === 'erase'   ? 'not-allowed' :
+    t === 'attract' ? 'cell'        :
+                      'crosshair';
 }
 
-/** Top-most ball at world-space (x,y), or null. Newest-first. */
 export function ballAt(x, y) {
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];
@@ -43,7 +41,6 @@ export function ballAt(x, y) {
   return null;
 }
 
-/** Index of the wall within `W.walls` that's within `tol` of (x,y), or -1. */
 export function wallAt(x, y, tol = 8) {
   for (let i = 0; i < W.walls.length; i++) {
     const w = W.walls[i];

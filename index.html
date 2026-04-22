@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="amber">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -35,6 +35,10 @@
       <circle cx="12" cy="12" r="2"/>
       <path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/>
     </symbol>
+    <symbol id="ic-attract" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="2.5"/>
+      <path d="M6 3l4 4M18 3l-4 4M6 21l4-4M18 21l-4-4M3 12h4M17 12h4M12 3v4M12 17v4"/>
+    </symbol>
     <symbol id="ic-heat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 2s4 4 4 8a4 4 0 01-8 0c0-3 2-5 2-7 0 0 2 1 2 3"/>
     </symbol>
@@ -42,6 +46,9 @@
       <circle cx="12" cy="12" r="9"/>
       <path d="M9.5 9a2.5 2.5 0 115 0c0 2-2.5 2-2.5 4"/>
       <circle cx="12" cy="17" r="0.8" fill="currentColor"/>
+    </symbol>
+    <symbol id="ic-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 7h3l2-3h6l2 3h3v13H4z"/><circle cx="12" cy="13" r="4"/>
     </symbol>
   </defs>
 </svg>
@@ -69,6 +76,9 @@
     <button class="tab" data-scene="jelly">Jelly</button>
     <button class="tab" data-scene="water">Water</button>
     <button class="tab" data-scene="magnets">Magnets</button>
+    <button class="tab" data-scene="avalanche">Avalanche</button>
+    <button class="tab" data-scene="conveyor">Conveyor</button>
+    <button class="tab" data-scene="chaos">Chaos</button>
   </div>
 </div>
 
@@ -79,14 +89,15 @@
     <div class="section">
       <div class="section-header">Tool</div>
       <div class="tool-grid" id="tool-row">
-        <button class="tool active" data-tool="spawn" title="Spawn · Q"><svg><use href="#ic-spawn"/></svg><span class="tool-label">Spawn</span></button>
-        <button class="tool"        data-tool="grab"  title="Grab · W"><svg><use href="#ic-grab"/></svg><span class="tool-label">Grab</span></button>
-        <button class="tool"        data-tool="draw"  title="Draw · E"><svg><use href="#ic-draw"/></svg><span class="tool-label">Draw</span></button>
-        <button class="tool"        data-tool="erase" title="Erase · R"><svg><use href="#ic-erase"/></svg><span class="tool-label">Erase</span></button>
-        <button class="tool"        data-tool="link"  title="Link · T"><svg><use href="#ic-link"/></svg><span class="tool-label">Link</span></button>
-        <button class="tool"        data-tool="pin"   title="Pin · Y"><svg><use href="#ic-pin"/></svg><span class="tool-label">Pin</span></button>
-        <button class="tool"        data-tool="push"  title="Push · U"><svg><use href="#ic-push"/></svg><span class="tool-label">Push</span></button>
-        <button class="tool"        data-tool="heat"  title="Heat · I"><svg><use href="#ic-heat"/></svg><span class="tool-label">Heat</span></button>
+        <button class="tool active" data-tool="spawn"   data-tip="Spawn · Q — click to create, drag to slingshot"><svg><use href="#ic-spawn"/></svg><span class="tool-label">Spawn</span></button>
+        <button class="tool"        data-tool="grab"    data-tip="Grab · W — pick up + fling"><svg><use href="#ic-grab"/></svg><span class="tool-label">Grab</span></button>
+        <button class="tool"        data-tool="draw"    data-tip="Draw · E — draw static walls"><svg><use href="#ic-draw"/></svg><span class="tool-label">Draw</span></button>
+        <button class="tool"        data-tool="erase"   data-tip="Erase · R — remove at cursor"><svg><use href="#ic-erase"/></svg><span class="tool-label">Erase</span></button>
+        <button class="tool"        data-tool="link"    data-tip="Link · T — spring-connect two balls"><svg><use href="#ic-link"/></svg><span class="tool-label">Link</span></button>
+        <button class="tool"        data-tool="pin"     data-tip="Pin · Y — toggle fixed"><svg><use href="#ic-pin"/></svg><span class="tool-label">Pin</span></button>
+        <button class="tool"        data-tool="push"    data-tip="Push · U — hold to repel"><svg><use href="#ic-push"/></svg><span class="tool-label">Push</span></button>
+        <button class="tool"        data-tool="attract" data-tip="Attract · O — hold to pull toward cursor"><svg><use href="#ic-attract"/></svg><span class="tool-label">Attract</span></button>
+        <button class="tool"        data-tool="heat"    data-tip="Heat · I — paint heat"><svg><use href="#ic-heat"/></svg><span class="tool-label">Heat</span></button>
       </div>
     </div>
 
@@ -98,48 +109,65 @@
     <div class="section">
       <div class="section-header">Actions</div>
       <div class="actions">
-        <button class="action-btn" id="btn-clear"><span>Clear balls</span><span class="kbd">C</span></button>
-        <button class="action-btn" id="btn-pause"><span>Pause</span><span class="kbd">␣</span></button>
-        <button class="action-btn" id="btn-slowmo"><span>Slow-motion</span><span class="kbd">F</span></button>
-        <button class="action-btn" id="btn-gravity"><span>Gravity on</span><span class="kbd">G</span></button>
-        <button class="action-btn" id="btn-reset-cam"><span>Reset view</span><span class="kbd">0</span></button>
+        <button class="action-btn" id="btn-clear"     data-tip="Remove all balls + springs"><span>Clear balls</span><span class="kbd">C</span></button>
+        <button class="action-btn" id="btn-pause"     data-tip="Freeze time"><span>Pause</span><span class="kbd">␣</span></button>
+        <button class="action-btn" id="btn-slowmo"    data-tip="Toggle 15% time-scale"><span>Slow-motion</span><span class="kbd">F</span></button>
+        <button class="action-btn" id="btn-gravity"   data-tip="Toggle gravity"><span>Gravity on</span><span class="kbd">G</span></button>
+        <button class="action-btn" id="btn-reset-cam" data-tip="Re-center camera + zoom"><span>Reset view</span><span class="kbd">0</span></button>
+        <button class="action-btn" id="btn-undo"      data-tip="Undo last spawn / wall / link"><span>Undo</span><span class="kbd">⌃Z</span></button>
       </div>
     </div>
 
   </div>
 </aside>
 
-<!-- ============ RIGHT PANEL — physics + visual + stats ============ -->
+<!-- ============ RIGHT PANEL — physics + settings + visual + stats ============ -->
 <aside class="panel panel-right">
   <div class="panel-body">
 
     <div class="section">
       <div class="section-header">Physics</div>
-      <div class="slider-row"><span class="slider-label">Gravity</span>   <input type="range" id="s-g" min="0"    max="2000" value="900" step="10"><span class="slider-value" id="v-g">900</span></div>
-      <div class="slider-row"><span class="slider-label">Drag</span>      <input type="range" id="s-d" min="0"    max="50"   value="5"   step="1"><span class="slider-value" id="v-d">0.05</span></div>
-      <div class="slider-row"><span class="slider-label">Bounce</span>    <input type="range" id="s-e" min="0"    max="120"  value="100" step="1"><span class="slider-value" id="v-e">1.00</span></div>
-      <div class="slider-row"><span class="slider-label">Friction</span>  <input type="range" id="s-f" min="0"    max="100"  value="50"  step="1"><span class="slider-value" id="v-f">0.50</span></div>
-      <div class="slider-row"><span class="slider-label">Magnus</span>    <input type="range" id="s-m" min="0"    max="200"  value="60"  step="1"><span class="slider-value" id="v-m">0.60</span></div>
-      <div class="slider-row"><span class="slider-label">Size</span>      <input type="range" id="s-r" min="6"    max="60"   value="20"  step="1"><span class="slider-value" id="v-r">20</span></div>
-      <div class="slider-row"><span class="slider-label">Wind</span>      <input type="range" id="s-w" min="-400" max="400"  value="0"   step="10"><span class="slider-value" id="v-w">0</span></div>
+      <div class="slider-row"><span class="slider-label">Gravity</span>  <input type="range" id="s-g" min="0"    max="2000" value="900" step="10"><span class="slider-value" id="v-g">900</span></div>
+      <div class="slider-row"><span class="slider-label">Drag</span>     <input type="range" id="s-d" min="0"    max="50"   value="5"   step="1"><span class="slider-value" id="v-d">0.05</span></div>
+      <div class="slider-row"><span class="slider-label">Bounce</span>   <input type="range" id="s-e" min="0"    max="120"  value="100" step="1"><span class="slider-value" id="v-e">1.00</span></div>
+      <div class="slider-row"><span class="slider-label">Friction</span> <input type="range" id="s-f" min="0"    max="100"  value="50"  step="1"><span class="slider-value" id="v-f">0.50</span></div>
+      <div class="slider-row"><span class="slider-label">Magnus</span>   <input type="range" id="s-m" min="0"    max="200"  value="60"  step="1"><span class="slider-value" id="v-m">0.60</span></div>
+      <div class="slider-row"><span class="slider-label">Size</span>     <input type="range" id="s-r" min="6"    max="60"   value="20"  step="1"><span class="slider-value" id="v-r">20</span></div>
+      <div class="slider-row"><span class="slider-label">Wind</span>     <input type="range" id="s-w" min="-400" max="400"  value="0"   step="10"><span class="slider-value" id="v-w">0</span></div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">Settings</div>
+      <div class="theme-row">
+        <span class="theme-dot active" data-theme="amber"  data-tip="Amber theme"></span>
+        <span class="theme-dot"        data-theme="cyan"   data-tip="Cyan theme"></span>
+        <span class="theme-dot"        data-theme="violet" data-tip="Violet theme"></span>
+        <span class="theme-dot"        data-theme="forest" data-tip="Forest theme"></span>
+      </div>
+      <div class="slider-row"><span class="slider-label">Volume</span><input type="range" id="s-vol" min="0" max="100" value="25" step="1"><span class="slider-value" id="v-vol">25</span></div>
+      <div class="action-row">
+        <button class="action-btn" id="btn-snapshot" data-tip="Download canvas as PNG"><span>Snapshot</span></button>
+        <button class="action-btn" id="btn-save"     data-tip="Save ball state to browser"><span>Save</span></button>
+        <button class="action-btn" id="btn-load"     data-tip="Restore saved state"><span>Load</span></button>
+      </div>
     </div>
 
     <div class="section">
       <div class="section-header">Visual</div>
       <div class="toggle-grid">
-        <button class="toggle active" id="t-bloom">Bloom</button>
-        <button class="toggle active" id="t-shadow">Shadow</button>
-        <button class="toggle"        id="t-blur">Blur</button>
-        <button class="toggle"        id="t-trail">Trails</button>
-        <button class="toggle"        id="t-vec">Vectors</button>
-        <button class="toggle active" id="t-sound">Sound</button>
-        <button class="toggle active" id="t-refract">Refract</button>
-        <button class="toggle active" id="t-heat">Heat</button>
-        <button class="toggle active" id="t-ao">AO</button>
-        <button class="toggle active" id="t-aberration">Chroma</button>
-        <button class="toggle active" id="t-grain">Grain</button>
-        <button class="toggle active" id="t-streaks">Streaks</button>
-        <button class="toggle active" id="t-flare">Flare</button>
+        <button class="toggle active" id="t-bloom"      data-tip="Glow around emissive balls">Bloom</button>
+        <button class="toggle active" id="t-shadow"     data-tip="Ground drop shadow">Shadow</button>
+        <button class="toggle"        id="t-blur"       data-tip="Motion blur · M">Blur</button>
+        <button class="toggle"        id="t-trail"      data-tip="Ball path trail">Trails</button>
+        <button class="toggle"        id="t-vec"        data-tip="Velocity + spin vectors · V">Vectors</button>
+        <button class="toggle active" id="t-sound"      data-tip="Impact sounds · S">Sound</button>
+        <button class="toggle active" id="t-refract"    data-tip="Glass refraction">Refract</button>
+        <button class="toggle active" id="t-heat"       data-tip="Heat FX · H">Heat</button>
+        <button class="toggle active" id="t-ao"         data-tip="Ambient occlusion">AO</button>
+        <button class="toggle active" id="t-aberration" data-tip="Chromatic aberration">Chroma</button>
+        <button class="toggle active" id="t-grain"      data-tip="Film grain">Grain</button>
+        <button class="toggle active" id="t-streaks"    data-tip="Motion streaks">Streaks</button>
+        <button class="toggle active" id="t-flare"      data-tip="Lens flares on bright balls">Flare</button>
       </div>
     </div>
 
@@ -179,10 +207,33 @@
 </div>
 
 <!-- ============ HELP BUTTON ============ -->
-<button class="btn btn-pill" id="help-btn">
+<button class="btn btn-pill" id="help-btn" data-tip="Controls + physics model">
   <svg width="12" height="12" style="margin-right:4px"><use href="#ic-help"/></svg>
   Help
 </button>
+
+<!-- ============ SCENE TITLE OVERLAY ============ -->
+<div class="scene-title" id="scene-title">
+  <div class="st-title" id="st-title">SANDBOX</div>
+  <div class="st-sub" id="st-sub">Open arena · no distractions</div>
+</div>
+
+<!-- ============ BALL INSPECTOR ============ -->
+<div class="inspector" id="inspector">
+  <div class="ins-head">
+    <span class="ins-swatch" id="ins-swatch"></span>
+    <span class="ins-name"   id="ins-name">—</span>
+    <span class="ins-id"     id="ins-id">#0</span>
+  </div>
+  <div class="ins-grid">
+    <span class="k">Speed</span>   <span class="v" id="ins-speed">0</span>
+    <span class="k">Spin</span>    <span class="v" id="ins-spin">0</span>
+    <span class="k">Mass</span>    <span class="v" id="ins-mass">0</span>
+    <span class="k">Radius</span>  <span class="v" id="ins-radius">0</span>
+    <span class="k">Pinned</span>  <span class="v" id="ins-pinned">no</span>
+  </div>
+  <div class="ins-heat-bar"><div class="fill" id="ins-heat" style="width:0%"></div></div>
+</div>
 
 <!-- ============ HELP OVERLAY ============ -->
 <div class="overlay" id="help">
@@ -199,6 +250,7 @@
       <span class="kbd">Link</span>    <span>Click two balls to connect them with a spring.</span>
       <span class="kbd">Pin</span>     <span>Click a ball to toggle whether it's fixed in place.</span>
       <span class="kbd">Push</span>    <span>Hold to push balls radially away from the cursor.</span>
+      <span class="kbd">Attract</span> <span>Hold to pull balls toward the cursor.</span>
       <span class="kbd">Heat</span>    <span>Paint heat onto balls — changes color, elasticity, friction.</span>
     </div>
 
@@ -208,8 +260,9 @@
       <span class="kbd">Middle-drag</span> <span>Pan the camera.</span>
       <span class="kbd">Wheel</span>       <span>Zoom in/out (at cursor).</span>
       <span class="kbd">← →</span>         <span>Actuate pinball flippers (in PINBALL scene).</span>
+      <span class="kbd">Ctrl-Z</span>      <span>Undo last spawn / wall / link.</span>
       <span class="kbd">1-9</span>         <span>Select a material.</span>
-      <span class="kbd">Q W E R T Y U I</span> <span>Select a tool.</span>
+      <span class="kbd">Q W E R T Y U I O</span> <span>Select a tool.</span>
       <span class="kbd">Space F G C</span>  <span>Pause · Slow-mo · Gravity · Clear.</span>
       <span class="kbd">B V S H M</span>    <span>Bloom · Vectors · Sound · Heat · Motion-blur.</span>
       <span class="kbd">Ctrl-R / 0</span>  <span>Reset scene · Reset camera.</span>
@@ -223,7 +276,8 @@
       resolve iteratively. Materials carry density, restitution, friction, metallic,
       glow, refraction, pitch, and timbre — heat modifies elasticity and friction
       per material. Buoyancy follows Archimedes, Magnus curves spinning trajectories,
-      and a uniform spatial hash keeps broadphase <code>O(n)</code> on average.
+      conveyor belts drag tangentially, and a uniform spatial hash keeps broadphase
+      <code>O(n)</code> on average.
     </div>
 
     <h4>Rendering</h4>
@@ -231,8 +285,8 @@
       Gradient sphere shading with a metallic branch (env reflection bands) and a
       diffuse branch. Glass balls refract the current scene snapshot through an
       inverse lens. Half-resolution bloom buffer, chromatic aberration, film grain,
-      fake ambient occlusion in contact gaps, motion streaks, and lens flares on
-      glowing sources. Ground shadows only when gravity is on.
+      fake ambient occlusion in contact gaps, motion streaks, lens flares on
+      glowing sources, and expanding impact rings on high-energy collisions.
     </div>
 
     <div class="help-footer">

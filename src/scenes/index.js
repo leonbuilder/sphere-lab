@@ -3,11 +3,13 @@
  *
  * To add a new scene:
  *   1. Drop a file in this directory whose default export is a (no-arg) builder.
- *   2. Import it below and add to SCENES.
+ *   2. Import it below and add to SCENES + LABELS.
  *   3. Add `<button class="tab" data-scene="NAME">Label</button>` to index.html.
+ *   4. (Optional) add a tagline to `src/ui/sceneTitle.js`.
  */
 
 import { W, cam, clearWorld } from '../core/world.js';
+import { showSceneTitle } from '../ui/sceneTitle.js';
 
 import sandbox   from './sandbox.js';
 import billiards from './billiards.js';
@@ -24,11 +26,14 @@ import rain      from './rain.js';
 import jelly     from './jelly.js';
 import water     from './water.js';
 import magnets   from './magnets.js';
+import avalanche from './avalanche.js';
+import conveyor  from './conveyor.js';
+import chaos     from './chaos.js';
 
 /** @type {Record<string, () => void>} */
 const SCENES = {
   sandbox, billiards, plinko, cradle, vortex, tower, galton, pinball,
-  cloth, domino, solar, rain, jelly, water, magnets
+  cloth, domino, solar, rain, jelly, water, magnets, avalanche, conveyor, chaos
 };
 
 export const SCENE_NAMES = Object.keys(SCENES);
@@ -37,10 +42,10 @@ const LABELS = {
   sandbox: 'Sandbox', billiards: 'Billiards', plinko: 'Plinko', cradle: 'Cradle',
   vortex: 'Vortex', tower: 'Tower', galton: 'Galton', pinball: 'Pinball',
   cloth: 'Cloth', domino: 'Domino', solar: 'Solar', rain: 'Rain',
-  jelly: 'Jelly', water: 'Water', magnets: 'Magnets'
+  jelly: 'Jelly', water: 'Water', magnets: 'Magnets',
+  avalanche: 'Avalanche', conveyor: 'Conveyor', chaos: 'Chaos'
 };
 
-/** Clear world state, re-center the camera, run the scene builder, sync HUD. */
 export function loadScene(name) {
   clearWorld();
   W.scene = name;
@@ -51,7 +56,9 @@ export function loadScene(name) {
 
   (SCENES[name] || sandbox)();
 
-  document.getElementById('stat-scene').textContent = LABELS[name] || name;
+  const label = LABELS[name] || name;
+  document.getElementById('stat-scene').textContent = label;
   document.querySelectorAll('#top .tab')
     .forEach(b => b.classList.toggle('active', b.dataset.scene === name));
+  showSceneTitle(name, label);
 }

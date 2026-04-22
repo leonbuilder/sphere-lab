@@ -1,11 +1,13 @@
 /**
  * Contact resolution. Three entry points:
  *   collideBalls(a, b) — ball/ball, impulse-based, with spin transfer + heat
- *   collideWall(b, w)  — ball/line segment, with rolling-friction enhancement
+ *   collideWall(b, w)  — ball/line, with rolling friction + optional conveyor drag
  *   collidePeg(b, p)   — ball/disc, with pinball bumper extra-kick
  *
- * Each function reads `PHYS.*Mul` globals and dispatches visual/audio FX.
- * `separateBalls` is exposed for the solver's position-correction pass.
+ * Conveyor walls have `wall.conveyorV`: a scalar target tangential velocity
+ * (positive = toward (x2,y2)). On contact we pull the ball's tangential
+ * velocity toward that target, scaled by material friction — slippery balls
+ * slide along the belt, grippy ones get swept along.
  */
 
 import { clamp, rand } from '../core/math.js';
@@ -15,11 +17,6 @@ import { Snd } from '../audio/sound.js';
 import { velRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from './materialMods.js';
 import { stats } from './stats.js';
 
-/**
- * Resolve overlap by moving both balls apart along the contact normal,
- * weighted by the *other* ball's mass so heavier bodies move less.
- * Returns whether there was any overlap to resolve.
- */
 export function separateBalls(a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
   const d = Math.sqrt(dx * dx + dy * dy) || 0.0001;
@@ -47,9 +44,8 @@ export function collideBalls(a, b) {
 
   const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
   const vn = rvx * nx + rvy * ny;
-  if (vn > 0) return;  // already separating
+  if (vn > 0) return;
 
-  // normal impulse
   const baseE = (a.mat.restitution + b.mat.restitution) * 0.5;
   const e = baseE * PHYS.restitutionMul * velRestScale(Math.abs(vn)) * heatRestMod(a) * heatRestMod(b);
   const invMa = a.pinned ? 0 : 1 / a.mass;
@@ -59,7 +55,6 @@ export function collideBalls(a, b) {
   a.vx -= j * nx * invMa; a.vy -= j * ny * invMa;
   b.vx += j * nx * invMb; b.vy += j * ny * invMb;
 
-  // tangential impulse with small restitution (superball effect) + spin transfer
   const surfVA = a.omega * a.r;
   const surfVB = -b.omega * b.r;
   const rvt = (b.vx - a.vx) * tx + (b.vy - a.vy) * ty + (surfVA - surfVB);
@@ -74,14 +69,12 @@ export function collideBalls(a, b) {
   if (!a.pinned) a.omega -= jt * a.r / a.inertia;
   if (!b.pinned) b.omega -= jt * b.r / b.inertia;
 
-  // weak Coulomb interaction
   if (a.charge && b.charge) {
     const f = a.charge * b.charge * 500 / (d2 + 10);
     a.vx -= f * nx * invMa;
     a.vy -= f * ny * invMa;
   }
 
-  // frictional + normal impact heating
   const heatGain = Math.abs(jt) * 0.00005 + Math.abs(vn) * 0.00002;
   a.heat = Math.min(1, a.heat + heatGain);
   b.heat = Math.min(1, b.heat + heatGain);
@@ -129,8 +122,6 @@ export function collideWall(b, wall) {
   b.vx -= vn * nx * (1 + e);
   b.vy -= vn * ny * (1 + e);
 
-  // rolling enhancement — amplify friction at low normal speed so balls
-  // come to rest instead of buzzing indefinitely
   const restFactor = Math.abs(vn) < 80 ? 1.6 : 1;
   const mu = b.mat.friction * PHYS.frictionMul * heatFricMod(b) * restFactor;
   const denom = 1 + b.r * b.r / b.inertia * b.mass;
@@ -139,6 +130,18 @@ export function collideWall(b, wall) {
   if (jt > maxJt) jt = maxJt; else if (jt < -maxJt) jt = -maxJt;
   b.vx += jt * tx / b.mass; b.vy += jt * ty / b.mass;
   b.omega += jt * b.r / b.inertia;
+
+  // conveyor: drag toward target surface velocity along wall's (x1→x2) tangent
+  if (wall.conveyorV) {
+    const wlen = Math.sqrt(wlen2);
+    const btx = wx / wlen, bty = wy / wlen;
+    const vAlong = b.vx * btx + b.vy * bty;
+    const diff = wall.conveyorV - vAlong;
+    const grip = clamp(0.05 + b.mat.friction * 0.5, 0.05, 0.6);
+    b.vx += btx * diff * grip;
+    b.vy += bty * diff * grip;
+    b.omega += diff * grip * 0.01;
+  }
 
   const heatGain = Math.abs(jt) * 0.00007;
   b.heat = Math.min(1, b.heat + heatGain);
@@ -184,7 +187,6 @@ export function collidePeg(b, peg) {
   if (mag > 4) {
     spawnImpact(peg.x + nx * peg.r, peg.y + ny * peg.r, nx, ny, mag, peg.bumper ? '#ffcc40' : '#ffcc66');
     if (peg.bumper) {
-      // pinball bumper — extra kick on top of the elastic bounce
       b.vx += nx * 500 * invMass(b);
       b.vy += ny * 500 * invMass(b);
       Snd.bonk(800 + rand(-100, 100), 0.2, 0.1, 'square');
