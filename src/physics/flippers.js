@@ -86,6 +86,8 @@ export function collideFlipper(b, f) {
   wake(b);
 
   spawnImpact(cx, cy, nx, ny, Math.abs(vn) * b.mass, '#ffb340');
-  Snd.bonk(520 + Math.abs(f.angVel) * 18, 0.2, 0.08, 'square');
+  // ball-on-flipper: the ball's own material voice + a small flipper-whack
+  Snd.wall(b, Math.abs(vn) * b.mass);
+  Snd.bonk(520 + Math.abs(f.angVel) * 18, 0.12, 0.06, 'square');
   stats.collisions++;
 }

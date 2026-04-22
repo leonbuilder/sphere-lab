@@ -70,7 +70,7 @@ function shatter(b) {
     );
   }
 
-  Snd.shatter(b.mat);
+  Snd.shatter(b);
 
   // remove the original
   const idx = balls.indexOf(b);

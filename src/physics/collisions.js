@@ -186,7 +186,7 @@ export function collideBalls(a, b) {
       b.squash = 1 - Math.min(0.35 * dB, mag * 0.0025 * dB);
       b.squashAng = Math.atan2(-ny, -nx);
     }
-    if (!aFractured && !bFractured) Snd.collision(a.mat, b.mat, mag);
+    if (!aFractured && !bFractured) Snd.collision(a, b, mag);
   }
   stats.collisions++;
 }
@@ -258,7 +258,7 @@ export function collideWall(b, wall) {
     const dF = (b.mat.deform ?? 0.4);
     b.squash = 1 - Math.min(0.4 * dF, Math.abs(vn) * 0.0008 * dF);
     b.squashAng = Math.atan2(ny, nx);
-    Snd.wall(b.mat, mag);
+    Snd.wall(b, mag);
   }
   stats.collisions++;
 }
@@ -302,7 +302,7 @@ export function collidePeg(b, peg) {
       b.vy += ny * 500 * invMass(b);
       Snd.bonk(800 + rand(-100, 100), 0.2, 0.1, 'square');
     } else {
-      Snd.wall(b.mat, mag);
+      Snd.wall(b, mag);
     }
   }
   stats.collisions++;
