@@ -35,7 +35,7 @@ realistic impulse-based ball dynamics. **Run with a static server** (see
 | HUD buttons / sliders              | `src/ui/*`                                |
 | Design tokens (color/spacing/font) | `styles/main.css` `:root` block           |
 | Ball stats (mass, heat, trail)     | `src/entities/ball.js`                    |
-| Audio synthesis                    | `src/audio/sound.js`                      |
+| Audio synthesis (modal)            | `src/audio/sound.js` (MODAL table + `emitMaterialSound`) |
 | Global physics knobs (gravity etc) | `src/core/config.js` (the `PHYS` object)  |
 | Camera behaviour                   | `src/core/world.js` (the `cam` object)    |
 | Tick rate / main loop order        | `src/loop.js`                             |
@@ -60,6 +60,30 @@ index.html
                     ├── postfx.js                   bloom, chromatic aberration, grain
                     └── fpsGraph.js                 HUD sparkline
 ```
+
+## Audio (modal synthesis)
+
+`src/audio/sound.js` generates material-realistic impact sounds using
+**modal synthesis** — the physical way real objects make noise:
+
+- **Attack transient** — a short filtered-noise burst modelling the contact
+  click. Material-specific: highpass for metals (`STEEL` @6 kHz, `GLASS`
+  @8 kHz, `ICE` @9 kHz), lowpass for rubbery thuds (`RUBBER` @780 Hz,
+  `BOWLING` @320 Hz), bandpass for mercury.
+- **Modal stack** — a handful of sine oscillators at each material's natural
+  frequencies, each with its own amplitude and decay. Steel has 4 high modes
+  that ring for ~0.5 s; rubber has a single 140 Hz mode that dies in 60 ms.
+- **Cross-material damping** — a collision call `emitMaterialSound(mat, str,
+  otherSoftness)` dampens the modes by `(1 - otherSoftness · 0.75)`. Rubber
+  (`deform = 1.0`) hitting steel absorbs most of the impulse, so the steel
+  barely rings and the dominant sound is the rubber thud.
+- **Detune** — each mode gets ±1 % random detune per hit so repeats aren't
+  identical.
+- **Reverb bus** — modes above 1.5 kHz route a little signal to a short
+  convolver; low modes don't (rooms reverb high frequencies).
+
+Fragile shatter uses `Snd.shatter(mat)` which plays the material's voice at
+full power plus extra high sine partials and a broad noise wash.
 
 ## Material realism
 

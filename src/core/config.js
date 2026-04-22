@@ -34,7 +34,7 @@ export const PHYS = {
   motionBlur: false, trails: false, showVec: false,
   bloom: true, shadow: true, sound: true, refract: true, heatFx: true,
   ao: true, aberration: true, grain: true, streaks: true, flare: true,
-  volume: 0.25
+  volume: 0.45
 };
 
 /** Keyboard → tool id (matches the tool grid in index.html). */
