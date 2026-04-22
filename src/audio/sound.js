@@ -95,22 +95,27 @@ const MIN_AUDIBLE_VN_WALL = 18;
 const MODAL = {
   // Steel ball bearing — sharp click, bright clang with rich inharmonic overtones.
   // Ratios modelled on a solid-sphere resonance pattern (not flute-like harmonics).
+  // Decays extended to match real chrome-steel: a 20 mm sphere in free air rings
+  // well over a second before going inaudible. A two-stage attack separates the
+  // unfiltered contact click (onset) from the coupled surface ring-up (attack).
   STEEL: {
     resonance: 1.00,
     baseFreq: 2800,
     sizeExp: 1.0,
     modes: [
-      { ratio: 1.000, amp: 1.00, decay: 0.55 },
-      { ratio: 1.594, amp: 0.75, decay: 0.47 },
-      { ratio: 2.136, amp: 0.58, decay: 0.40 },
-      { ratio: 2.653, amp: 0.45, decay: 0.33 },
-      { ratio: 3.155, amp: 0.34, decay: 0.27 },
-      { ratio: 3.650, amp: 0.25, decay: 0.22 },
-      { ratio: 4.128, amp: 0.18, decay: 0.17 },
-      { ratio: 4.593, amp: 0.12, decay: 0.14 }
+      { ratio: 1.000, amp: 1.00, decay: 1.30 },
+      { ratio: 1.594, amp: 0.80, decay: 1.02 },
+      { ratio: 2.136, amp: 0.64, decay: 0.80 },
+      { ratio: 2.653, amp: 0.50, decay: 0.62 },
+      { ratio: 3.155, amp: 0.38, decay: 0.48 },
+      { ratio: 3.650, amp: 0.28, decay: 0.38 },
+      { ratio: 4.128, amp: 0.20, decay: 0.30 },
+      { ratio: 4.593, amp: 0.14, decay: 0.24 },
+      { ratio: 5.055, amp: 0.09, decay: 0.20 }
     ],
-    attack: { type: 'highpass', freq: 6000, dur: 0.010, amp: 0.50 },
-    reverbSend: 0.35
+    onset:  { dur: 0.0014, amp: 0.42 },
+    attack: { type: 'highpass', freq: 5000, dur: 0.014, amp: 0.55, velHpScale: 0.55 },
+    reverbSend: 0.42
   },
   // Rubber — almost entirely damping. Short low thud, single weak body mode.
   RUBBER: {
@@ -383,6 +388,27 @@ export const Snd = {
     src.start(t);
   },
 
+  /** Internal — sub-millisecond broadband click, the primary contact pop.
+   *  No filter, hard edges — reads as an impulse, not a tone. Used as the
+   *  first stage of a two-stage attack for hard materials. */
+  _onset(on, gain, destination) {
+    if (!this.ctx || gain <= 0) return;
+    if (!this._canSpawn()) return;
+    const t = this.ctx.currentTime;
+    const len = Math.max(16, Math.floor(this.ctx.sampleRate * on.dur));
+    const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const g = this.ctx.createGain();
+    g.gain.value = gain * on.amp;
+    src.connect(g); g.connect(destination);
+    src.onended = () => this._release();
+    this._claim();
+    src.start(t);
+  },
+
   /** Internal — short filtered noise burst for an attack transient. */
   _attack(atk, gain, destination) {
     if (!this.ctx || gain <= 0) return;
@@ -443,9 +469,20 @@ export const Snd = {
     pan.pan.value = panVal;
     pan.connect(this.master);
 
-    // Attack transient — softened by the other body's damping
+    // Two-stage attack. `onset` (if present) is an ultra-brief broadband
+    // click — the unfiltered impulsive contact pop that precedes any
+    // coupled surface ringing. `attack` is the filtered ring-up that
+    // optionally shifts brighter with harder impacts (velHpScale) — real
+    // metal contacts get sharper-spectrum as contact time shortens.
     const attackAmp = strength * (1 - otherSoftness * 0.35);
-    this._attack(profile.attack, attackAmp, pan);
+    if (profile.onset) {
+      this._onset(profile.onset, strength * (1 - otherSoftness * 0.25), pan);
+    }
+    const atk = profile.attack;
+    const effAtk = atk.velHpScale
+      ? { ...atk, freq: atk.freq * (1 + strength * atk.velHpScale) }
+      : atk;
+    this._attack(effAtk, attackAmp, pan);
 
     // Modes — pitch + brightness depend on size + velocity
     const modeScale = strength * (1 - otherSoftness * 0.75) * profile.resonance;

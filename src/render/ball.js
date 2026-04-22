@@ -233,6 +233,105 @@ function getMatTexture(matName) {
 }
 function clamp255(v) { return v < 0 ? 0 : v > 255 ? 255 : v | 0; }
 
+/* ------------------------------------------------------------------ */
+/*  Steel-specific environment reflection                              */
+/* ------------------------------------------------------------------ */
+/* Chrome steel is a near-perfect mirror, so its body doesn't have a
+ * colour of its own — what you see IS the environment. To approximate
+ * that in 2D we bake a tall sky / horizon / ground panorama once, then
+ * tile it vertically across a clipped ball with an offset driven by
+ * the ball's rotation. Spinning steel shows a visibly scrolling
+ * reflection, which is the single strongest cue for "this is metal."
+ */
+let _steelEnvCanvas = null;
+function getSteelEnv() {
+  if (_steelEnvCanvas) return _steelEnvCanvas;
+  const C = document.createElement('canvas');
+  C.width = 64; C.height = 256;
+  const tc = C.getContext('2d');
+
+  // Sky (top 38%) — cool deep zenith fading to near-horizon brightness
+  const sky = tc.createLinearGradient(0, 0, 0, C.height * 0.38);
+  sky.addColorStop(0,    '#161f33');
+  sky.addColorStop(0.55, '#3a5278');
+  sky.addColorStop(1,    '#8aa6c8');
+  tc.fillStyle = sky;
+  tc.fillRect(0, 0, C.width, C.height * 0.38);
+
+  // Horizon band (38-50%) — warm bright strip, the brightest zone on the ball
+  const hz = tc.createLinearGradient(0, C.height * 0.38, 0, C.height * 0.50);
+  hz.addColorStop(0,   '#d6c090');
+  hz.addColorStop(0.4, '#fff3d0');
+  hz.addColorStop(1,   '#b87840');
+  tc.fillStyle = hz;
+  tc.fillRect(0, C.height * 0.38, C.width, C.height * 0.12);
+
+  // Ground (50-100%) — warm dark earth tones fading to black at the base
+  const gr = tc.createLinearGradient(0, C.height * 0.50, 0, C.height);
+  gr.addColorStop(0,   '#3e3424');
+  gr.addColorStop(0.45,'#15110c');
+  gr.addColorStop(1,   '#050403');
+  tc.fillStyle = gr;
+  tc.fillRect(0, C.height * 0.50, C.width, C.height * 0.50);
+
+  // Soft cloud bands in the sky for variation — breaks up the plain gradient
+  tc.fillStyle = 'rgba(255,255,255,0.14)';
+  tc.beginPath();
+  tc.ellipse(C.width * 0.45, C.height * 0.18, C.width * 0.50, C.height * 0.035, 0, 0, TAU);
+  tc.fill();
+  tc.fillStyle = 'rgba(255,255,255,0.09)';
+  tc.beginPath();
+  tc.ellipse(C.width * 0.20, C.height * 0.29, C.width * 0.30, C.height * 0.025, 0, 0, TAU);
+  tc.fill();
+
+  _steelEnvCanvas = C;
+  return C;
+}
+
+/** Draw steel's body as a rotation-scrolled env reflection + metallic depth. */
+function drawSteelBody(tx, b, offX, offY) {
+  const { x, y, r, mat } = b;
+  const env = getSteelEnv();
+
+  tx.save();
+  tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
+
+  // Tile the panorama vertically across the ball with a rotation-driven
+  // scroll offset. Vertical world-position adds a small tilt so balls
+  // near the top of the scene show more sky than balls near the floor.
+  const envH = r * 2.2;
+  const worldBias = clamp((y / (W.ch || 1000) - 0.5) * 0.6, -0.5, 0.5);
+  const phase = ((b.angle / TAU + worldBias) % 1 + 1) % 1;
+  let envY = y - r - phase * envH;
+  while (envY + envH > y - r) envY -= envH;
+  for (let k = 0; k < 3; k++) {
+    tx.drawImage(env, x - r, envY, r * 2, envH);
+    envY += envH;
+  }
+
+  // Metallic depth — bright highlight biased toward the light, dark fringe
+  // at the lower rim. This is on top of the env panorama so the ball reads
+  // as 3D rather than a flat textured disc.
+  const depth = tx.createRadialGradient(x + offX, y + offY, 0, x, y, r);
+  depth.addColorStop(0,   'rgba(255,255,255,0.22)');
+  depth.addColorStop(0.5, 'rgba(255,255,255,0)');
+  depth.addColorStop(0.9, 'rgba(0,0,0,0.30)');
+  depth.addColorStop(1,   'rgba(0,0,0,0.55)');
+  tx.fillStyle = depth;
+  tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
+
+  // Subtle desaturation toward the steel tint — real chrome is slightly
+  // cool-blue; pure env reflection would look too vivid.
+  tx.globalCompositeOperation = 'multiply';
+  tx.fillStyle = withAlpha(mat.color, 0.18);
+  tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
+  tx.globalCompositeOperation = 'source-over';
+
+  tx.restore();
+}
+
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+
 /**
  * Glass refraction with a small chromatic split: sample sceneCanvas three
  * times at slightly different scales (R wider, B tighter) and blend via
@@ -375,37 +474,44 @@ export function drawBall(tx, b) {
   }
 
   const bodyColor = b.effectiveColor();
-  const g = tx.createRadialGradient(x + offX, y + offY, 0, x, y, r);
-  if (refracted) {
-    g.addColorStop(0,   'rgba(255,255,255,0.55)');
-    g.addColorStop(0.5, 'rgba(255,255,255,0.04)');
-    g.addColorStop(1,   'rgba(0,0,0,0.32)');
-  } else if (mat.metallic > 0.7) {
-    // near-mirror: sharp hot core + deep dark fringe
-    g.addColorStop(0,    '#ffffff');
-    g.addColorStop(0.28, lighten(bodyColor, 0.5));
-    g.addColorStop(0.6,  bodyColor);
-    g.addColorStop(0.88, darken(bodyColor, 0.55));
-    g.addColorStop(1,    darken(bodyColor, 0.78));
-  } else if (mat.metallic > 0.3) {
-    g.addColorStop(0,   lighten(bodyColor, 0.65));
-    g.addColorStop(0.5, bodyColor);
-    g.addColorStop(1,   darken(bodyColor, 0.55));
+  if (!refracted && mat.name === 'STEEL') {
+    // Steel replaces the generic metallic body with a rotation-scrolled
+    // sky/horizon/ground env panorama — see drawSteelBody above.
+    drawSteelBody(tx, b, offX, offY);
   } else {
-    g.addColorStop(0,   lighten(bodyColor, 0.55));
-    g.addColorStop(0.6, bodyColor);
-    g.addColorStop(1,   darken(bodyColor, 0.45));
+    const g = tx.createRadialGradient(x + offX, y + offY, 0, x, y, r);
+    if (refracted) {
+      g.addColorStop(0,   'rgba(255,255,255,0.55)');
+      g.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+      g.addColorStop(1,   'rgba(0,0,0,0.32)');
+    } else if (mat.metallic > 0.7) {
+      // near-mirror: sharp hot core + deep dark fringe
+      g.addColorStop(0,    '#ffffff');
+      g.addColorStop(0.28, lighten(bodyColor, 0.5));
+      g.addColorStop(0.6,  bodyColor);
+      g.addColorStop(0.88, darken(bodyColor, 0.55));
+      g.addColorStop(1,    darken(bodyColor, 0.78));
+    } else if (mat.metallic > 0.3) {
+      g.addColorStop(0,   lighten(bodyColor, 0.65));
+      g.addColorStop(0.5, bodyColor);
+      g.addColorStop(1,   darken(bodyColor, 0.55));
+    } else {
+      g.addColorStop(0,   lighten(bodyColor, 0.55));
+      g.addColorStop(0.6, bodyColor);
+      g.addColorStop(1,   darken(bodyColor, 0.45));
+    }
+    tx.fillStyle = g;
+    tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
   }
-  tx.fillStyle = g;
-  tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
 
   // Fresnel edge bias — uniform bright rim regardless of light direction.
   tx.save();
   tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
   drawFresnelRim(tx, b);
 
-  // metallic faux env — sky + horizon + ground bands
-  if (mat.metallic > 0.5) {
+  // metallic faux env — sky + horizon + ground bands.
+  // Steel uses its own full env panorama in drawSteelBody, so skip these.
+  if (mat.metallic > 0.5 && mat.name !== 'STEEL') {
     const sg = tx.createLinearGradient(x, y - r, x, y);
     sg.addColorStop(0,   'rgba(255,255,255,0.5)');
     sg.addColorStop(0.5, 'rgba(255,255,255,0.15)');
@@ -426,17 +532,52 @@ export function drawBall(tx, b) {
     tx.fillStyle = gg;
     tx.fillRect(x - r, y + r * 0.5, r * 2, r * 0.5);
   }
+
+  // Anisotropic brushed streak for steel — a thin bright horizontal band
+  // in the ball-local frame, rotated with the ball. This is the "smeared
+  // highlight along the brush direction" that separates brushed metal
+  // from a plain mirror finish.
+  if (mat.name === 'STEEL' && mat.anisotropy > 0) {
+    tx.save();
+    tx.translate(x, y);
+    tx.rotate(b.angle + (mat.brushAxis || 0));
+    const streakY = offY * 0.4;
+    const bandH = r * 0.20;
+    const sg2 = tx.createLinearGradient(0, streakY - bandH, 0, streakY + bandH);
+    sg2.addColorStop(0,   'rgba(255,255,255,0)');
+    sg2.addColorStop(0.5, `rgba(255,255,255,${0.28 * mat.anisotropy})`);
+    sg2.addColorStop(1,   'rgba(255,255,255,0)');
+    tx.fillStyle = sg2;
+    tx.fillRect(-r * 1.1, streakY - bandH, r * 2.2, bandH * 2);
+    tx.restore();
+  }
   tx.restore();
 
-  // primary specular (directional)
+  // primary specular (directional). Polished steel has a very tight
+  // hotspot plus a wider soft lobe — the dual-lobe structure reads as
+  // "real" where a single spot looks like a cartoon reflection.
+  const isSteel = (mat.name === 'STEEL');
   const hx = x + offX * 1.3, hy = y + offY * 1.3;
-  const hr = r * (mat.metallic > 0.5 ? 0.26 : 0.18);
+  const hr = r * (isSteel ? 0.085 : (mat.metallic > 0.5 ? 0.26 : 0.18));
   const hg = tx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-  hg.addColorStop(0,   'rgba(255,255,255,0.98)');
-  hg.addColorStop(0.5, 'rgba(255,255,255,0.38)');
+  hg.addColorStop(0,   'rgba(255,255,255,1.0)');
+  hg.addColorStop(0.5, isSteel ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.38)');
   hg.addColorStop(1,   'rgba(255,255,255,0)');
   tx.fillStyle = hg;
   tx.beginPath(); tx.arc(hx, hy, hr, 0, TAU); tx.fill();
+
+  // Wide soft specular lobe — the fuzzy halo surrounding the hotspot on
+  // polished metal. Only drawn for steel (other metals use the existing
+  // secondary spec below).
+  if (isSteel) {
+    const hrWide = r * 0.42;
+    const hgW = tx.createRadialGradient(hx, hy, 0, hx, hy, hrWide);
+    hgW.addColorStop(0,   'rgba(255,255,255,0.22)');
+    hgW.addColorStop(0.5, 'rgba(255,255,255,0.07)');
+    hgW.addColorStop(1,   'rgba(255,255,255,0)');
+    tx.fillStyle = hgW;
+    tx.beginPath(); tx.arc(hx, hy, hrWide, 0, TAU); tx.fill();
+  }
 
   if (mat.metallic > 0.3 || mat.refract > 0.4) {
     const hx2 = x + offX * 0.6, hy2 = y + offY * 0.6;
@@ -446,6 +587,20 @@ export function drawBall(tx, b) {
     hg2.addColorStop(1, 'rgba(255,255,255,0)');
     tx.fillStyle = hg2;
     tx.beginPath(); tx.arc(hx2, hy2, hr2, 0, TAU); tx.fill();
+  }
+
+  // Clearcoat — a sub-pixel bright glint from the thin gloss layer on
+  // top of the base metal. Just a tiny pinpoint at the reflection point.
+  if (mat.clearcoat) {
+    const cc = mat.clearcoat;
+    const ccr = r * 0.055;
+    const ccx = x + offX * 1.45;
+    const ccy = y + offY * 1.45;
+    const cg = tx.createRadialGradient(ccx, ccy, 0, ccx, ccy, ccr);
+    cg.addColorStop(0, `rgba(255,255,255,${Math.min(1, cc)})`);
+    cg.addColorStop(1, 'rgba(255,255,255,0)');
+    tx.fillStyle = cg;
+    tx.beginPath(); tx.arc(ccx, ccy, ccr, 0, TAU); tx.fill();
   }
 
   // rotation markers so spin is visible

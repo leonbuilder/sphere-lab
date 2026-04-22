@@ -36,21 +36,25 @@
  * @property {number} refract
  * @property {number} pitch
  * @property {OscillatorType} timbre
- * @property {number}  [deform]    — 0 rigid .. 1 elastomer (squash amount + hold)
- * @property {boolean} [fragile]   — can shatter on hard impact
- * @property {number}  [chip]      — probability of a debris chip per collision (0..1)
- * @property {boolean} [magnetic]  — attracts other magnetic balls
- * @property {boolean} [fluid]     — tries to merge with similar fluid on contact
- * @property {number}  [roll]      — rolling resistance (0 = glides forever, 0.2 = grinds to halt fast)
- * @property {number}  [heatKeep]  — per-step heat retention factor at 240 Hz (higher = holds heat longer)
- * @property {boolean} [dentable]  — accumulates permanent dents from hard impacts
- * @property {number}  [cond]      — thermal conductivity (0 insulator .. 1 fast heat flow)
+ * @property {number}  [deform]     — 0 rigid .. 1 elastomer (squash amount + hold)
+ * @property {boolean} [fragile]    — can shatter on hard impact
+ * @property {number}  [chip]       — probability of a debris chip per collision (0..1)
+ * @property {boolean} [magnetic]   — attracts other magnetic balls
+ * @property {boolean} [fluid]      — tries to merge with similar fluid on contact
+ * @property {number}  [roll]       — rolling resistance (0 = glides forever, 0.2 = grinds to halt fast)
+ * @property {number}  [heatKeep]   — per-step heat retention factor at 240 Hz (higher = holds heat longer)
+ * @property {boolean} [dentable]   — accumulates permanent dents from hard impacts
+ * @property {number}  [cond]       — thermal conductivity (0 insulator .. 1 fast heat flow)
  * @property {number}  [bounceBack] — 0 overdamped (snaps back) .. 1 lightly damped (jiggles visibly)
+ * @property {number}  [hardness]   — 0..1 Mohs-ish. Harder material damages softer in asymmetric hits
+ * @property {number}  [anisotropy] — 0..1 strength of directional (brushed) highlight
+ * @property {number}  [brushAxis]  — brush direction in ball-local frame, radians
+ * @property {number}  [clearcoat]  — 0..1 thin glossy top layer on metals (sharp specular lobe)
  */
 
 /** @type {Record<MaterialId, Material>} */
 export const MATERIALS = {
-  steel:   { name: 'STEEL',   color: '#c0ccdc', density: 7.8,  restitution: 0.62, friction: 0.35, metallic: 0.95, glow: 0,    refract: 0,    pitch: 680,  timbre: 'triangle', deform: 0.12, roll: 0.010, heatKeep: 0.9985, cond: 0.90, bounceBack: 0.00 },
+  steel:   { name: 'STEEL',   color: '#c2cedc', density: 7.85, restitution: 0.86, friction: 0.33, metallic: 0.98, glow: 0,    refract: 0,    pitch: 680,  timbre: 'triangle', deform: 0.05, roll: 0.003, heatKeep: 0.9985, cond: 0.90, bounceBack: 0.00, hardness: 0.88, anisotropy: 0.65, brushAxis: 0, clearcoat: 0.40 },
   rubber:  { name: 'RUBBER',  color: '#ff5576', density: 1.1,  restitution: 0.88, friction: 0.80, metallic: 0.03, glow: 0,    refract: 0,    pitch: 260,  timbre: 'sine',     deform: 1.0 , roll: 0.150, heatKeep: 0.9930, cond: 0.05, bounceBack: 0.85 },
   glass:   { name: 'GLASS',   color: '#8fd0ff', density: 2.5,  restitution: 0.95, friction: 0.10, metallic: 0.20, glow: 0,    refract: 0.9,  pitch: 1500, timbre: 'sine',     deform: 0.0,  roll: 0.008, heatKeep: 0.9955, cond: 0.25, bounceBack: 0.00, fragile: true },
   bowling: { name: 'BOWLING', color: '#1a1f28', density: 3.5,  restitution: 0.22, friction: 0.60, metallic: 0.35, glow: 0,    refract: 0,    pitch: 120,  timbre: 'square',   deform: 0.35, roll: 0.055, heatKeep: 0.9955, cond: 0.15, bounceBack: 0.15 },
