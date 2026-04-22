@@ -117,7 +117,11 @@ export function physicsStep(dt) {
 
     // Rolling resistance — only active while in sustained wall contact.
     // Damps the tangential component of velocity (leaves normal alone so
-    // gravity / bounces behave correctly). Steel coasts, rubber grabs hard.
+    // gravity / bounces behave correctly). Pure rolling has no kinetic
+    // friction, so this is the ONLY thing slowing a rolling ball down —
+    // the multiplier has to be strong to feel, since rolling can otherwise
+    // continue forever. Rubber grinds to a stop in ~1.5 s, steel coasts
+    // for 10+ s, ice glides practically forever.
     if (b.groundT > 0) {
       b.groundT -= dt;
       const rollK = mat.roll ?? 0.05;
@@ -125,10 +129,10 @@ export function physicsStep(dt) {
       const vn = b.vx * nx + b.vy * ny;
       const vtx = b.vx - vn * nx;
       const vty = b.vy - vn * ny;
-      const dampFac = Math.max(0, 1 - rollK * 3.2 * dt);
+      const dampFac = Math.max(0, 1 - rollK * 14 * dt);
       b.vx = vn * nx + vtx * dampFac;
       b.vy = vn * ny + vty * dampFac;
-      b.omega *= Math.max(0, 1 - rollK * 5 * dt);
+      b.omega *= Math.max(0, 1 - rollK * 20 * dt);
     }
 
     applyVortex(b, dt);
