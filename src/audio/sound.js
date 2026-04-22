@@ -160,7 +160,17 @@ export const Snd = {
 
       this.master = this.ctx.createGain();
       this.master.gain.value = PHYS.volume;
-      this.master.connect(this.ctx.destination);
+
+      // Gentle master compressor — eight balls shattering at once can
+      // easily push the bus past 0 dBFS otherwise.
+      const comp = this.ctx.createDynamicsCompressor();
+      comp.threshold.value = -14;
+      comp.knee.value = 8;
+      comp.ratio.value = 4;
+      comp.attack.value = 0.004;
+      comp.release.value = 0.14;
+      this.master.connect(comp);
+      comp.connect(this.ctx.destination);
 
       // cheap reverb: noise-impulse convolver, low wet level
       const conv = this.ctx.createConvolver();
@@ -174,7 +184,7 @@ export const Snd = {
       const wet = this.ctx.createGain();
       wet.gain.value = 0.10;
       conv.connect(wet);
-      wet.connect(this.ctx.destination);
+      wet.connect(comp);
       this.wetBus = /** @type {any} */ (conv);
     } catch (e) {
       this.ctx = null;
@@ -261,7 +271,7 @@ export const Snd = {
 
     // modes — heavily dampened by softer partners
     const modeScale = strength * (1 - otherSoftness * 0.75) * profile.resonance;
-    if (modeScale < 0.01) return;
+    if (modeScale < 0.003) return;
 
     for (const m of profile.modes) {
       const detune = 1 + (Math.random() - 0.5) * 0.02;    // ±1 % variation
@@ -270,8 +280,9 @@ export const Snd = {
       o.type = 'sine';
       o.frequency.setValueAtTime(m.freq * detune, t);
 
-      // short attack to avoid click artefact, exponential decay to silence
-      const peak = m.amp * modeScale * 0.3;
+      // short attack to avoid click artefact, exponential decay to silence.
+      // Mode gain is the carrier of material identity — make it audible.
+      const peak = m.amp * modeScale * 0.9;
       g.gain.setValueAtTime(0, t);
       g.gain.linearRampToValueAtTime(peak, t + 0.002);
       g.gain.exponentialRampToValueAtTime(0.0001, t + m.decay);
@@ -295,7 +306,7 @@ export const Snd = {
    * damped by the other's softness.
    */
   collision(matA, matB, magnitude) {
-    const strength = clamp(magnitude * 0.0014, 0.02, 0.75);
+    const strength = clamp(magnitude * 0.003, 0.04, 0.9);
     const softA = matA.deform ?? 0.2;
     const softB = matB.deform ?? 0.2;
     this.emitMaterialSound(matA, strength, softB);
@@ -304,7 +315,7 @@ export const Snd = {
 
   /** Ball-on-wall — treat walls as a generic hard material (softness ≈ 0.15). */
   wall(mat, magnitude) {
-    const strength = clamp(magnitude * 0.0014, 0.02, 0.55);
+    const strength = clamp(magnitude * 0.0025, 0.035, 0.7);
     this.emitMaterialSound(mat, strength, 0.15);
   },
 
