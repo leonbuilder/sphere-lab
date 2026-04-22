@@ -1,16 +1,18 @@
 /**
- * Fixed-timestep physics integration. Called by `loop.js` at 240 Hz with
- * sub-stepping handled by the caller.
+ * Fixed-timestep physics integration. Called by `loop.js` at 240 Hz via an
+ * accumulator.
  *
  * Order per step:
- *   1. Rain-spawn (if scene asks for it)
- *   2. Per-ball integration: gravity, wind, field forces, tool forces,
- *      drag (linear + quadratic), Magnus, speed cap, CCD sub-step against
- *      walls + pegs.
- *   3. Spring + pendulum-constraint iterations.
- *   4. Ball/ball broadphase + multi-iteration contact solve.
- *   5. Particle integration + culling.
- *   6. Cull escaped balls.
+ *   1. Rain-spawn drop (if scene asks for it).
+ *   2. Flipper angular update.
+ *   3. Magnetism pass (global ball↔ball).
+ *   4. Ripple aging.
+ *   5. Per-ball integration: forces → drag → Magnus → cap → CCD sub-step
+ *      against walls + pegs + flippers.
+ *   6. Spring + pendulum-constraint iterations.
+ *   7. Ball/ball broadphase + multi-iteration contact solve.
+ *   8. Particle integration + culling.
+ *   9. Cull escaped balls.
  */
 
 import { W } from '../core/world.js';
@@ -20,23 +22,24 @@ import { balls, Ball } from '../entities/ball.js';
 import { MATERIALS, MAT_KEYS } from '../entities/materials.js';
 import { particles, spawnHeatShimmer } from '../entities/particles.js';
 import { collideBalls, collideWall, collidePeg } from './collisions.js';
-import { applyVortex, applySolar, applyBuoyancy } from './forces.js';
+import { updateFlippers, collideFlipper } from './flippers.js';
+import { applyVortex, applySolar, applyBuoyancy, applyMagnetism, stepRipples } from './forces.js';
 import { buildPairs } from './broadphase.js';
 import { mouse } from '../input/mouse.js';
 import { getTool } from '../input/tools.js';
 
-/**
- * Run one fixed physics step.
- * @param {number} dt — seconds, normally 1/240.
- */
 export function physicsStep(dt) {
-  // rain / galton continuous drop
+  // continuous drop for rain / galton
   if (W.rainSpawn && Math.random() < 0.1 && balls.length < 200) {
     const mat = MATERIALS[pick(MAT_KEYS)];
     const b = new Ball(rand(W.cw * 0.1, W.cw * 0.9), 60, rand(7, 16), mat);
     b.vx = rand(-30, 30) + PHYS.wind * 0.1;
     balls.push(b);
   }
+
+  updateFlippers(dt);
+  applyMagnetism(dt);
+  stepRipples(dt);
 
   const TOOL = getTool();
 
@@ -49,7 +52,6 @@ export function physicsStep(dt) {
     if (b.pinned) { b.vx = b.vy = b.omega = 0; continue; }
 
     if (b.grabbed) {
-      // critically-damped spring toward cursor
       b.vx = (mouse.wx - b.x) * 25 - b.vx * 8 * dt;
       b.vy = (mouse.wy - b.y) * 25 - b.vy * 8 * dt;
     }
@@ -61,7 +63,6 @@ export function physicsStep(dt) {
     applySolar(b, dt);
     applyBuoyancy(b, dt);
 
-    // tool-driven forces (PUSH + HEAT while held)
     if (mouse.down && TOOL === 'push') {
       const dx = b.x - mouse.wx, dy = b.y - mouse.wy;
       const d2 = dx * dx + dy * dy;
@@ -77,14 +78,14 @@ export function physicsStep(dt) {
       if (dx * dx + dy * dy < 100 * 100) b.heat = Math.min(1, b.heat + dt * 3);
     }
 
-    // quadratic drag — linear at low speed, quadratic-ish at high speed
+    // quadratic drag
     const vmag = len(b.vx, b.vy);
     const dragK = PHYS.drag * (1 + vmag * 0.0018);
     const dragFactor = Math.max(0, 1 - dragK * dt);
     b.vx *= dragFactor; b.vy *= dragFactor;
     b.omega *= Math.max(0, 1 - PHYS.drag * dt * 0.8);
 
-    // 2D Magnus: F⊥ = k·ω·v. Snapshot v first so the two components don't contaminate.
+    // 2D Magnus with velocity snapshot
     if (vmag > 10 && Math.abs(b.omega) > 0.1) {
       const magK = PHYS.magnus * 0.002;
       const mvx = -b.vy * b.omega * magK * dt;
@@ -98,7 +99,7 @@ export function physicsStep(dt) {
     const maxV = 4000;
     if (spd > maxV) { b.vx *= maxV / spd; b.vy *= maxV / spd; }
 
-    // CCD — substep so no ball travels more than 0.6·r per step
+    // CCD sub-step
     const steps = Math.max(1, Math.ceil(spd * dt / (b.r * 0.6)));
     const sdt = dt / steps;
     b.px = b.x; b.py = b.y;
@@ -107,6 +108,7 @@ export function physicsStep(dt) {
       b.y += b.vy * sdt;
       for (const w of W.walls) collideWall(b, w);
       for (const peg of W.pegs) collidePeg(b, peg);
+      for (const f of W.flippers) collideFlipper(b, f);
     }
     b.angle += b.omega * dt;
 
@@ -122,7 +124,7 @@ export function physicsStep(dt) {
     }
   }
 
-  // soft constraints (springs + pendulum tethers)
+  // springs + pendulum tethers
   const springIters = W.springs.length > 200 ? 3 : 6;
   for (let i = 0; i < springIters; i++) {
     for (const s of W.springs) s.solve(dt / springIters * 4);
@@ -136,7 +138,6 @@ export function physicsStep(dt) {
       if (Math.abs(corr) < 0.001) continue;
       a.x -= nx * corr;
       a.y -= ny * corr;
-      // kill velocity component that's "pulling against" the tether
       const vn = a.vx * nx + a.vy * ny;
       if ((corr > 0 && vn > 0) || (corr < 0 && vn < 0)) {
         a.vx -= vn * nx; a.vy -= vn * ny;

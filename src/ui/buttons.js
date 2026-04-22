@@ -1,6 +1,6 @@
 /**
- * Wire up scene buttons, tool buttons, action buttons, and visual-toggle
- * buttons. Called once at init from `src/main.js`.
+ * Wire up scene tabs, tool grid, action buttons, and visual toggles.
+ * Called once at init from `src/main.js`.
  */
 
 import { PHYS } from '../core/config.js';
@@ -9,33 +9,28 @@ import { balls } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
 import { loadScene } from '../scenes/index.js';
 import { setTool } from '../input/tools.js';
-import { updatePauseBtn, updateToggle } from './hud.js';
+import { updatePauseBtn, updateSlowmoBtn, updateToggle } from './hud.js';
 
 export function bindButtons() {
-  // top bar — scene buttons
-  document.querySelectorAll('#top .btn').forEach(b => { b.onclick = () => loadScene(b.dataset.scene); });
+  // scene tabs
+  document.querySelectorAll('#top .tab').forEach(b => { b.onclick = () => loadScene(b.dataset.scene); });
 
-  // left sidebar — tool buttons
-  document.querySelectorAll('#tool-row .btn').forEach(b => { b.onclick = () => setTool(b.dataset.tool); });
+  // tool grid
+  document.querySelectorAll('#tool-row .tool').forEach(b => { b.onclick = () => setTool(b.dataset.tool); });
 
-  // left sidebar — action buttons
+  // action buttons
   document.getElementById('btn-clear').onclick = () => {
     balls.length = 0; particles.length = 0; W.springs.length = 0;
   };
-
   document.getElementById('btn-pause').onclick = () => { PHYS.paused = !PHYS.paused; updatePauseBtn(); };
-
   document.getElementById('btn-slowmo').onclick = () => {
     PHYS.slowmo = PHYS.slowmo === 1 ? 0.15 : 1;
-    const b = document.getElementById('btn-slowmo');
-    b.textContent = PHYS.slowmo === 1 ? 'SLOW-MO [F]' : 'NORMAL [F]';
-    b.classList.toggle('active', PHYS.slowmo !== 1);
+    updateSlowmoBtn();
   };
-
   document.getElementById('btn-gravity').onclick = () => { PHYS.gravityOn = !PHYS.gravityOn; setGravityUI(PHYS.gravityOn); };
   document.getElementById('btn-reset-cam').onclick = () => { cam.tx = W.cw / 2; cam.ty = W.ch / 2; cam.tz = 1; };
 
-  // right sidebar — visual toggles → PHYS boolean flag
+  // visual toggles → PHYS boolean flag
   const toggles = [
     ['t-bloom',      'bloom'],
     ['t-shadow',     'shadow'],

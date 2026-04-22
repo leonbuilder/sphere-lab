@@ -1,10 +1,10 @@
 /**
- * Scene registry + the `loadScene(name)` entry point.
+ * Scene registry + `loadScene(name)` entry point.
  *
  * To add a new scene:
- *   1. Drop a file in this directory that `default export`s a (no-arg) builder.
- *   2. Import it here and add to the SCENES dict below.
- *   3. Add a corresponding <button data-scene="…"> to index.html.
+ *   1. Drop a file in this directory whose default export is a (no-arg) builder.
+ *   2. Import it below and add to SCENES.
+ *   3. Add `<button class="tab" data-scene="NAME">Label</button>` to index.html.
  */
 
 import { W, cam, clearWorld } from '../core/world.js';
@@ -23,31 +23,35 @@ import solar     from './solar.js';
 import rain      from './rain.js';
 import jelly     from './jelly.js';
 import water     from './water.js';
+import magnets   from './magnets.js';
 
 /** @type {Record<string, () => void>} */
 const SCENES = {
   sandbox, billiards, plinko, cradle, vortex, tower, galton, pinball,
-  cloth, domino, solar, rain, jelly, water
+  cloth, domino, solar, rain, jelly, water, magnets
 };
 
-/** Names in their display order. */
 export const SCENE_NAMES = Object.keys(SCENES);
 
-/**
- * Swap to a scene by name. Clears world state, re-centers the camera, runs
- * the builder, and updates the top-bar button's active highlight.
- */
+const LABELS = {
+  sandbox: 'Sandbox', billiards: 'Billiards', plinko: 'Plinko', cradle: 'Cradle',
+  vortex: 'Vortex', tower: 'Tower', galton: 'Galton', pinball: 'Pinball',
+  cloth: 'Cloth', domino: 'Domino', solar: 'Solar', rain: 'Rain',
+  jelly: 'Jelly', water: 'Water', magnets: 'Magnets'
+};
+
+/** Clear world state, re-center the camera, run the scene builder, sync HUD. */
 export function loadScene(name) {
   clearWorld();
   W.scene = name;
   W.rainSpawn = false;
 
-  // center camera on the world so scene-built coordinates map to screen
   cam.tx = W.cw / 2; cam.ty = W.ch / 2; cam.tz = 1;
   cam.x  = W.cw / 2; cam.y  = W.ch / 2; cam.zoom = 1;
 
   (SCENES[name] || sandbox)();
 
-  document.getElementById('stat-scene').textContent = name.toUpperCase();
-  document.querySelectorAll('#top .btn').forEach(b => b.classList.toggle('active', b.dataset.scene === name));
+  document.getElementById('stat-scene').textContent = LABELS[name] || name;
+  document.querySelectorAll('#top .tab')
+    .forEach(b => b.classList.toggle('active', b.dataset.scene === name));
 }

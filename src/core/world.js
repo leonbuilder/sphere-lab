@@ -1,11 +1,11 @@
 /**
  * World + camera state. Reset by `clearWorld()` whenever a scene loads.
  *
- * `W` holds scene geometry and ambient modes (vortex, solar, water). Scenes
- * mutate it directly during build; the solver + renderer read it.
+ * `W` holds scene geometry and ambient modes (vortex, solar, water, flippers,
+ * ripples). Scenes mutate it during build; the solver + renderer read it.
  *
  * `cam` holds current {x, y, zoom} and target {tx, ty, tz}. The main loop
- * smooths current toward target every frame.
+ * smooths current toward target each frame.
  */
 
 import { balls } from '../entities/ball.js';
@@ -27,9 +27,30 @@ import { PHYS } from './config.js';
 
 /**
  * @typedef {Object} Constraint
- * Inextensible-length tether from ball `a` to fixed anchor (ax, ay).
+ * Inextensible tether from ball `a` to fixed anchor (ax, ay).
  * @property {import('../entities/ball.js').Ball} a
  * @property {number} ax @property {number} ay @property {number} len
+ */
+
+/**
+ * @typedef {Object} Flipper
+ * Rotating line segment pivoting at (px, py). `side` is -1 for left (swings
+ * counter-clockwise when actuated) or +1 for right.
+ * @property {number} px @property {number} py
+ * @property {number} length
+ * @property {number} angle       — current angle in radians
+ * @property {number} angVel      — angular velocity
+ * @property {number} restAngle   — resting (down) angle
+ * @property {number} upAngle     — fully-up angle
+ * @property {number} side        — -1 left, +1 right
+ * @property {boolean} active     — held state
+ */
+
+/** @typedef {Object} Ripple
+ * @property {number} x       — horizontal origin along the water line
+ * @property {number} amp     — current amplitude (decays over time)
+ * @property {number} phase   — radians, advances each frame
+ * @property {number} life    — seconds remaining
  */
 
 /** Single source of truth for scene state. */
@@ -39,14 +60,17 @@ export const W = {
   /** @type {Peg[]} */         pegs: [],
   /** @type {Constraint[]} */  constraints: [],
   /** @type {import('../entities/spring.js').Spring[]} */ springs: [],
-  flippers: [], bumpers: [],
+  /** @type {Flipper[]} */     flippers: [],
+  bumpers: [],
   scene: 'sandbox',
   bgColor1: '#0b1324', bgColor2: '#02040b',
   rainSpawn: false,
   vortexX: 0, vortexY: 0,
   solar: false,
+  magnetic: false,
   /** @type {number | undefined} — y of the water surface (undefined = no water). */
-  waterY: undefined
+  waterY: undefined,
+  /** @type {Ripple[]} */ ripples: []
 };
 
 export const cam = { x: 0, y: 0, zoom: 1, tx: 0, ty: 0, tz: 1 };
@@ -81,25 +105,24 @@ export function clearWorld() {
   W.springs.length = 0;
   W.flippers.length = 0;
   W.bumpers.length = 0;
+  W.ripples.length = 0;
   particles.length = 0;
   W.solar = false;
+  W.magnetic = false;
   W.waterY = undefined;
 }
 
-/**
- * Flip gravity on/off and optionally set its magnitude. Also updates the HUD
- * button label + slider so the UI stays in sync when a scene forces gravity.
- */
+/** Keep the HUD gravity action button in sync when scenes flip gravity. */
 export function setGravityUI(on, g) {
   PHYS.gravityOn = on;
   if (typeof g === 'number') {
     PHYS.gravity = g;
-    const s = document.getElementById('s-g');
-    if (s) { s.value = g; document.getElementById('v-g').textContent = g; }
+    const s = /** @type {HTMLInputElement} */ (document.getElementById('s-g'));
+    if (s) { s.value = String(g); document.getElementById('v-g').textContent = String(g); }
   }
   const b = document.getElementById('btn-gravity');
-  if (b) {
-    b.textContent = on ? 'GRAVITY ON [G]' : 'GRAVITY OFF [G]';
-    b.classList.toggle('active', !on);
-  }
+  if (!b) return;
+  const span = b.querySelector('span:not(.kbd)');
+  if (span) span.textContent = on ? 'Gravity on' : 'Gravity off';
+  b.classList.toggle('active', on);
 }

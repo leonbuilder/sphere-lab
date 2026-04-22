@@ -1,6 +1,7 @@
 /**
- * World-geometry drawing: walls, pegs, constraint tethers, springs,
- * vortex FX, water surface, solar sun glow, and ball ground shadows.
+ * World-geometry drawing: walls, pegs, constraint tethers, springs, flippers,
+ * vortex FX, water surface (with live ripples), solar sun glow,
+ * and ball ground shadows.
  *
  * Everything here reads from `W` (core/world.js). No simulation writes.
  */
@@ -11,9 +12,7 @@ import { TAU, clamp } from '../core/math.js';
 import { mix } from '../core/color.js';
 import { balls } from '../entities/ball.js';
 
-/** @param {CanvasRenderingContext2D} tx */
 export function drawWalls(tx) {
-  // glow pass
   tx.strokeStyle = '#4a607c';
   tx.shadowColor = '#8fd0ff'; tx.shadowBlur = 4;
   tx.lineWidth = 3; tx.lineCap = 'round';
@@ -24,7 +23,6 @@ export function drawWalls(tx) {
     tx.beginPath(); tx.moveTo(w.x1, w.y1); tx.lineTo(w.x2, w.y2); tx.stroke();
   }
   tx.shadowBlur = 0;
-  // thin bright overlay for contrast
   tx.strokeStyle = 'rgba(255,255,255,0.18)';
   tx.lineWidth = 1;
   for (const w of W.walls) {
@@ -32,12 +30,35 @@ export function drawWalls(tx) {
   }
 }
 
-/** @param {CanvasRenderingContext2D} tx */
+/**
+ * Pinball flippers — drawn as a stubby line capped with a knob at the pivot
+ * and a rounded tip. Orange with a glow so they read as interactive.
+ */
+export function drawFlippers(tx) {
+  for (const f of W.flippers) {
+    const x2 = f.px + Math.cos(f.angle) * f.length;
+    const y2 = f.py + Math.sin(f.angle) * f.length;
+
+    tx.save();
+    tx.shadowColor = '#ffb340';
+    tx.shadowBlur = f.active ? 14 : 6;
+    tx.strokeStyle = f.active ? '#ffd080' : '#ffb340';
+    tx.lineWidth = 9;
+    tx.lineCap = 'round';
+    tx.beginPath(); tx.moveTo(f.px, f.py); tx.lineTo(x2, y2); tx.stroke();
+    tx.restore();
+
+    // pivot knob
+    tx.fillStyle = '#2a1a08';
+    tx.beginPath(); tx.arc(f.px, f.py, 5, 0, TAU); tx.fill();
+    tx.strokeStyle = '#ffb340'; tx.lineWidth = 1;
+    tx.beginPath(); tx.arc(f.px, f.py, 5, 0, TAU); tx.stroke();
+  }
+}
+
 export function drawPegs(tx) {
   for (const p of W.pegs) {
     const bumper = p.bumper;
-
-    // drop shadow
     tx.fillStyle = 'rgba(0,0,0,0.45)';
     tx.beginPath();
     tx.ellipse(p.x + 2, p.y + 4, p.r * 1.1, p.r * 0.35, 0, 0, TAU);
@@ -66,7 +87,6 @@ export function drawPegs(tx) {
   }
 }
 
-/** @param {CanvasRenderingContext2D} tx */
 export function drawConstraints(tx) {
   tx.strokeStyle = 'rgba(200,220,255,0.6)';
   tx.lineWidth = 1;
@@ -78,7 +98,6 @@ export function drawConstraints(tx) {
   }
 }
 
-/** @param {CanvasRenderingContext2D} tx — stretched red, compressed blue, neutral white */
 export function drawSprings(tx) {
   for (const s of W.springs) {
     const dx = s.b.x - s.a.x, dy = s.b.y - s.a.y;
@@ -98,7 +117,11 @@ export function drawSprings(tx) {
   tx.globalAlpha = 1;
 }
 
-/** Water body + animated surface waves + caustic highlights. */
+/**
+ * Water surface: the baseline y is `W.waterY`, displaced by the sum of all
+ * active ripples' contributions at each x. Each ripple is a radial wave
+ * emanating from its origin along the surface.
+ */
 export function drawWater(tx) {
   if (W.waterY === undefined) return;
   const y = W.waterY;
@@ -110,24 +133,40 @@ export function drawWater(tx) {
   tx.fillRect(0, y, W.cw, W.ch - y);
 
   const t = performance.now() * 0.0012;
+
+  // sample surface including ripple contributions
+  const sample = x => {
+    let dy = Math.sin(x * 0.015 + t * 2) * 4 + Math.sin(x * 0.04 + t * 3.1) * 2;
+    for (const r of W.ripples) {
+      const dist = Math.abs(x - r.x);
+      // wave travels ~160 px/s outward; amplitude falls with distance
+      const leading = r.phase * 160;
+      const env = Math.max(0, 1 - Math.abs(dist - leading) / 140);
+      dy += Math.sin(dist * 0.08 - r.phase * 6) * r.amp * env;
+    }
+    return dy;
+  };
+
   tx.strokeStyle = 'rgba(180,220,255,0.75)';
   tx.lineWidth = 2;
   tx.beginPath();
-  for (let x = 0; x <= W.cw; x += 6) {
-    const wave = Math.sin(x * 0.015 + t * 2) * 4 + Math.sin(x * 0.04 + t * 3.1) * 2;
-    if (x === 0) tx.moveTo(x, y + wave); else tx.lineTo(x, y + wave);
+  for (let x = 0; x <= W.cw; x += 4) {
+    const dy = sample(x);
+    if (x === 0) tx.moveTo(x, y + dy); else tx.lineTo(x, y + dy);
   }
   tx.stroke();
+
+  // thinner inner glow line
   tx.strokeStyle = 'rgba(255,255,255,0.25)';
   tx.lineWidth = 1;
   tx.beginPath();
   for (let x = 0; x <= W.cw; x += 6) {
-    const wave = Math.sin(x * 0.022 + t * 1.6) * 3;
-    if (x === 0) tx.moveTo(x, y - 2 + wave); else tx.lineTo(x, y - 2 + wave);
+    const dy = Math.sin(x * 0.022 + t * 1.6) * 3;
+    if (x === 0) tx.moveTo(x, y - 2 + dy); else tx.lineTo(x, y - 2 + dy);
   }
   tx.stroke();
 
-  // light caustics
+  // caustics
   tx.globalCompositeOperation = 'screen';
   for (let i = 0; i < 6; i++) {
     const cx = ((i * 223 + t * 80) % W.cw);
@@ -176,7 +215,6 @@ export function drawSolarCenter(tx) {
   tx.fill();
 }
 
-/** Elongated "floor" shadows under balls — only with gravity on. */
 export function drawBallShadows(tx) {
   if (!PHYS.shadow || !PHYS.gravityOn) return;
   const floorY = W.ch - 40;

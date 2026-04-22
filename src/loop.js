@@ -3,38 +3,46 @@
  * accumulator internally (240 Hz).
  *
  * Per frame:
- *   1. Sample FPS (every 0.3s) and push to the sidebar sparkline.
+ *   1. Sample FPS every 0.3 s and push to the telemetry sparklines.
  *   2. Smooth camera current toward target.
  *   3. Drain the physics accumulator into fixed steps.
- *   4. Render: background → world → balls → postfx.
- *   5. Update HUD text stats.
+ *   4. Sample collisions-per-second + kinetic energy; push to sparklines.
+ *   5. Render: background → world → balls → water → particles → flares →
+ *      tool previews → bloom → postfx.
+ *   6. Update HUD stats.
  */
 
 import { PHYS } from './core/config.js';
 import { W, cam } from './core/world.js';
 import { TAU, clamp, lerp, len } from './core/math.js';
-import { balls } from './entities/ball.js';
+import { balls, selectedMat } from './entities/ball.js';
 import { MATERIALS } from './entities/materials.js';
-import { selectedMat } from './entities/ball.js';
 import { physicsStep } from './physics/step.js';
 import { stats, collisionWindow } from './physics/stats.js';
 import { canvas, ctx, dpr, sceneCanvas, sceneCtx } from './render/canvas.js';
 import { drawBackground } from './render/background.js';
 import {
   drawWalls, drawPegs, drawConstraints, drawSprings,
-  drawVortex, drawWater, drawSolarCenter, drawBallShadows
+  drawVortex, drawWater, drawSolarCenter, drawBallShadows, drawFlippers
 } from './render/world.js';
 import { drawBall, drawTrail } from './render/ball.js';
 import { drawAO, drawParticles, drawLensFlares } from './render/effects.js';
 import { doBloomPass, doPostFX } from './render/postfx.js';
-import { renderFpsGraph } from './render/fpsGraph.js';
+import { renderSparkline } from './render/statsGraph.js';
 import { mouse } from './input/mouse.js';
 import { getTool } from './input/tools.js';
 
-/** @type {number[]} */
-const fpsHistory = [];
+const fpsHistory = /** @type {number[]} */ ([]);
+const cpsHistory = /** @type {number[]} */ ([]);
+const energyHistory = /** @type {number[]} */ ([]);
+
+const FPS_CANVAS    = /** @type {HTMLCanvasElement} */ (document.getElementById('fps-canvas'));
+const CPS_CANVAS    = /** @type {HTMLCanvasElement} */ (document.getElementById('cps-canvas'));
+const ENERGY_CANVAS = /** @type {HTMLCanvasElement} */ (document.getElementById('energy-canvas'));
+
 let lastT = performance.now();
 let fpsTime = 0, fpsCount = 0, fps = 0;
+let sampleTime = 0;
 let accumulator = 0;
 const FIXED_STEP = 1 / 240;
 
@@ -42,15 +50,15 @@ function frame(now) {
   const dt = Math.min(0.05, (now - lastT) / 1000);
   lastT = now;
 
-  // FPS sampling
+  // fps sampling (coarser granularity than render rate)
   fpsTime += dt;
   fpsCount++;
   if (fpsTime >= 0.3) {
     fps = Math.round(fpsCount / fpsTime);
     fpsTime = 0; fpsCount = 0;
     fpsHistory.push(fps);
-    if (fpsHistory.length > 70) fpsHistory.shift();
-    renderFpsGraph(fpsHistory);
+    if (fpsHistory.length > 80) fpsHistory.shift();
+    renderSparkline(FPS_CANVAS, fpsHistory, { color: '#ffaa33', max: 75, reference: 60 });
   }
 
   // camera smoothing
@@ -67,7 +75,7 @@ function frame(now) {
       accumulator -= FIXED_STEP;
       its++;
     }
-    if (its === 8) accumulator = 0; // avoid "spiral of death" if we fell behind
+    if (its === 8) accumulator = 0;
   }
 
   // rolling 1s collision rate
@@ -76,10 +84,22 @@ function frame(now) {
   while (collisionWindow.length && now - collisionWindow[0].t > 1000) collisionWindow.shift();
   const cps = collisionWindow.reduce((s, x) => s + x.c, 0);
 
+  // sample telemetry (every 150 ms to keep graphs readable)
+  sampleTime += dt;
+  if (sampleTime >= 0.15) {
+    sampleTime = 0;
+    cpsHistory.push(cps);
+    if (cpsHistory.length > 80) cpsHistory.shift();
+    let ke = 0; for (const b of balls) ke += b.kineticEnergy();
+    energyHistory.push(ke);
+    if (energyHistory.length > 80) energyHistory.shift();
+    renderSparkline(CPS_CANVAS, cpsHistory, { color: '#6fb9ff' });
+    renderSparkline(ENERGY_CANVAS, energyHistory, { color: '#4bde9a' });
+  }
+
   // ===== Render =====
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (PHYS.motionBlur) {
-    // paint a translucent fill instead of clearing — leaves long-exposure tails
     ctx.fillStyle = 'rgba(5, 8, 18, 0.35)';
     ctx.fillRect(0, 0, W.cw, W.ch);
   } else {
@@ -93,13 +113,12 @@ function frame(now) {
   drawSolarCenter(ctx);
   drawWalls(ctx);
   drawPegs(ctx);
+  drawFlippers(ctx);
   drawConstraints(ctx);
   drawSprings(ctx);
   drawVortex(ctx);
   drawBallShadows(ctx);
 
-  // If any refractive ball is onscreen, snapshot the current paint into
-  // sceneCanvas first — the ball shader uses it as its lens texture.
   if (PHYS.refract && balls.some(b => (b.mat.refract || 0) > 0.3)) {
     ctx.restore();
     sceneCtx.setTransform(1, 0, 0, 1, 0, 0);
@@ -118,7 +137,7 @@ function frame(now) {
 
   drawToolPreviews(ctx);
 
-  ctx.restore(); // end camera
+  ctx.restore();
 
   doBloomPass();
   doPostFX();
@@ -127,9 +146,6 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
-/** All the active-tool visual feedback: slingshot, wall ghost, link ghost,
- *  push/heat radius, grab line. Lives here because it reads both `mouse` and
- *  the render context and belongs to the render path. */
 function drawToolPreviews(tx) {
   const TOOL = getTool();
 
@@ -137,7 +153,7 @@ function drawToolPreviews(tx) {
     const dx = mouse.wsx - mouse.wx, dy = mouse.wsy - mouse.wy;
     const d = len(dx, dy);
     if (d > 5) {
-      tx.strokeStyle = '#ffb340'; tx.lineWidth = 2;
+      tx.strokeStyle = '#ffaa33'; tx.lineWidth = 2;
       tx.setLineDash([6, 4]);
       tx.beginPath(); tx.moveTo(mouse.wsx, mouse.wsy); tx.lineTo(mouse.wx, mouse.wy); tx.stroke();
       tx.setLineDash([]);
@@ -146,7 +162,7 @@ function drawToolPreviews(tx) {
       tx.strokeStyle = mat.color; tx.lineWidth = 1;
       tx.beginPath(); tx.arc(mouse.wsx, mouse.wsy, PHYS.spawnRadius, 0, TAU);
       tx.fill(); tx.stroke();
-      tx.strokeStyle = '#ffb340'; tx.lineWidth = 2;
+      tx.strokeStyle = '#ffaa33'; tx.lineWidth = 2;
       const ax = mouse.wsx + dx, ay = mouse.wsy + dy;
       const ang = Math.atan2(dy, dx);
       tx.beginPath();
@@ -158,7 +174,7 @@ function drawToolPreviews(tx) {
   }
 
   if (TOOL === 'draw' && mouse.draw.active) {
-    tx.strokeStyle = '#ffb340'; tx.lineWidth = 3;
+    tx.strokeStyle = '#ffaa33'; tx.lineWidth = 3;
     tx.globalAlpha = 0.7;
     tx.lineCap = 'round';
     tx.beginPath();
@@ -169,19 +185,19 @@ function drawToolPreviews(tx) {
   }
 
   if (TOOL === 'link' && mouse.linkFirst) {
-    tx.strokeStyle = '#c878ff';
+    tx.strokeStyle = '#b285ff';
     tx.setLineDash([4, 4]);
     tx.lineWidth = 2;
     tx.beginPath(); tx.moveTo(mouse.linkFirst.x, mouse.linkFirst.y); tx.lineTo(mouse.wx, mouse.wy);
     tx.stroke();
     tx.setLineDash([]);
-    tx.strokeStyle = '#c878ff'; tx.lineWidth = 2;
+    tx.strokeStyle = '#b285ff'; tx.lineWidth = 2;
     tx.beginPath(); tx.arc(mouse.linkFirst.x, mouse.linkFirst.y, mouse.linkFirst.r + 3, 0, TAU); tx.stroke();
   }
 
   if (TOOL === 'push' || TOOL === 'heat') {
     const r = TOOL === 'push' ? 200 : 100;
-    tx.strokeStyle = TOOL === 'push' ? '#4affb4' : '#ff6020';
+    tx.strokeStyle = TOOL === 'push' ? '#4bde9a' : '#ff5f7a';
     tx.globalAlpha = 0.3 + (mouse.down ? 0.3 : 0);
     tx.lineWidth = 2;
     tx.setLineDash([4, 4]);
@@ -191,7 +207,7 @@ function drawToolPreviews(tx) {
   }
 
   if (mouse.grab) {
-    tx.strokeStyle = '#4affb4'; tx.lineWidth = 1;
+    tx.strokeStyle = '#4bde9a'; tx.lineWidth = 1;
     tx.setLineDash([4, 3]);
     tx.beginPath(); tx.moveTo(mouse.grab.x, mouse.grab.y); tx.lineTo(mouse.wx, mouse.wy);
     tx.stroke();

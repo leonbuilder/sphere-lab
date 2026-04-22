@@ -1,11 +1,8 @@
 /**
  * Active tool + hit-testing helpers.
  *
- * `getTool()` is how every other module reads the current tool — it returns
- * the current string. Importing a primitive directly wouldn't see updates
- * because ES module primitive exports are live bindings only through named
- * imports that refer to *bindings*, which can be tricky; a function call is
- * unambiguous.
+ * `getTool()` is how every other module reads the current tool — a function
+ * instead of a live-binding export for clarity.
  */
 
 import { clamp } from '../core/math.js';
@@ -13,16 +10,23 @@ import { balls } from '../entities/ball.js';
 import { W } from '../core/world.js';
 import { canvas } from '../render/canvas.js';
 
-/** @type {'spawn'|'grab'|'draw'|'erase'|'link'|'pin'|'push'|'heat'} */
+/** @typedef {'spawn'|'grab'|'draw'|'erase'|'link'|'pin'|'push'|'heat'} ToolId */
+
+/** @type {ToolId} */
 let TOOL = 'spawn';
+
+const LABELS = {
+  spawn: 'Spawn', grab: 'Grab', draw: 'Draw', erase: 'Erase',
+  link: 'Link', pin: 'Pin', push: 'Push', heat: 'Heat'
+};
 
 export function getTool() { return TOOL; }
 
 export function setTool(t) {
   TOOL = t;
-  document.querySelectorAll('#tool-row .btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
-  document.getElementById('stat-tool').textContent = t.toUpperCase();
-  document.getElementById('mode-indicator').textContent = t.toUpperCase() + ' MODE';
+  document.querySelectorAll('#tool-row .tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+  document.getElementById('stat-tool').textContent = LABELS[t] || t;
+  document.getElementById('mode-text').textContent = (LABELS[t] || t) + ' mode';
   canvas.style.cursor =
     t === 'grab'  ? 'grab'        :
     t === 'draw'  ? 'crosshair'   :
@@ -30,7 +34,7 @@ export function setTool(t) {
                     'crosshair';
 }
 
-/** Top-most ball at world-space (x,y), or null. Iterates newest-first. */
+/** Top-most ball at world-space (x,y), or null. Newest-first. */
 export function ballAt(x, y) {
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];

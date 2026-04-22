@@ -10,16 +10,21 @@ realistic impulse-based ball dynamics. **Run with a static server** (see
 | ---------------------------------- | ----------------------------------------- |
 | A material's density / bounciness  | `src/entities/materials.js`               |
 | A scene's layout                   | `src/scenes/<name>.js`                    |
-| Add a new scene                    | new file in `src/scenes/` + register in `src/scenes/index.js` + new `<button>` in `index.html` |
+| Add a new scene                    | new file in `src/scenes/` + register in `src/scenes/index.js` + new `<button class="tab">` in `index.html` |
 | Collision response math            | `src/physics/collisions.js`               |
+| Pinball flippers (angle + kick)    | `src/physics/flippers.js`                 |
+| Magnetism between balls            | `src/physics/forces.js::applyMagnetism`   |
+| Water ripples (spawn + decay)      | `src/physics/forces.js` + `src/render/world.js::drawWater` |
 | Solver loop / field forces         | `src/physics/step.js` + `src/physics/forces.js` |
 | Broadphase (pair generation)       | `src/physics/broadphase.js`               |
 | How a ball is drawn                | `src/render/ball.js`                      |
 | Backgrounds / vortex / water / sun | `src/render/background.js`, `src/render/world.js` |
 | Bloom, grain, chromatic aberration | `src/render/postfx.js`                    |
+| Telemetry mini-graphs              | `src/render/statsGraph.js` (generic sparkline) |
 | Mouse-tool behaviour               | `src/input/mouse.js` + `src/input/tools.js` |
-| Keyboard shortcuts                 | `src/input/keyboard.js`                   |
+| Keyboard shortcuts                 | `src/input/keyboard.js` (arrows → flippers) |
 | HUD buttons / sliders              | `src/ui/*`                                |
+| Design tokens (color/spacing/font) | `styles/main.css` `:root` block           |
 | Ball stats (mass, heat, trail)     | `src/entities/ball.js`                    |
 | Audio synthesis                    | `src/audio/sound.js`                      |
 | Global physics knobs (gravity etc) | `src/core/config.js` (the `PHYS` object)  |
@@ -124,3 +129,7 @@ index.html
 - **`setGravityUI` writes DOM.** Scenes call it, so they must be loaded
   after the DOM is ready (they will be — see above).
 - **Ball cap is 260.** Enforced in `spawnBall` to keep the solver tractable.
+- **Action buttons have a label span + a kbd span.** Swap the label by writing
+  to `span:not(.kbd)`, not `textContent` (see `ui/hud.js::setActionLabel`).
+- **Mode pill's text is inside `#mode-text`,** not `#mode-indicator` — the
+  outer element also contains the pulsing dot.

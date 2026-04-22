@@ -1,20 +1,21 @@
 /**
  * Scene-specific field forces:
- *   applyVortex   — tangential + inward attraction toward W.vortex{X,Y}
- *   applySolar    — 1/r² attraction toward the canvas center (SOLAR scene)
- *   applyBuoyancy — Archimedes lift + viscous drag + entry splash particles
+ *   applyVortex     — tangential + inward attraction toward W.vortex{X,Y}
+ *   applySolar      — 1/r² attraction toward the canvas center (SOLAR scene)
+ *   applyBuoyancy   — Archimedes lift + viscous drag + entry splash + ripple spawn
+ *   applyMagnetism  — mutual attraction between magnetic materials (MAGNETS scene)
  *
- * Each is a no-op when its feature is disabled, so `step.js` can call all
- * three unconditionally per ball.
+ * Single-ball functions are no-ops when their feature is disabled, so `step.js`
+ * can call them unconditionally per ball.
  */
 
 import { W } from '../core/world.js';
 import { PHYS } from '../core/config.js';
 import { clamp, len, rand } from '../core/math.js';
+import { balls } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
 
-/** Swirl force: radial attraction + perpendicular "orbital" component. */
 export function applyVortex(b, dt) {
   if (W.scene !== 'vortex') return;
   const dx = W.vortexX - b.x, dy = W.vortexY - b.y;
@@ -27,25 +28,21 @@ export function applyVortex(b, dt) {
   b.vy += (dx / d) * f * dt * 0.7;
 }
 
-/** Inverse-square attraction toward the canvas center, used by the SOLAR scene. */
 export function applySolar(b, dt) {
   if (!W.solar) return;
   const cx = W.cw / 2, cy = W.ch / 2;
   const dx = cx - b.x, dy = cy - b.y;
   const d2 = dx * dx + dy * dy;
   const d = Math.sqrt(d2) || 0.001;
-  if (d < 50) return;  // inside the sun, stop pulling
+  if (d < 50) return;
   const f = 120000 / (d2 + 100);
   b.vx += (dx / d) * f * dt;
   b.vy += (dy / d) * f * dt;
 }
 
 /**
- * Archimedes buoyancy in the `waterY` column. Plus:
- *   - extra viscous drag inside the fluid
- *   - spin drag (water opposes rotation more than it opposes translation)
- *   - splash particle burst + sound on entry
- * Uses `b.py + b.r < waterY && b.y + b.r >= waterY` to detect entry.
+ * Archimedes buoyancy + viscous drag + entry splash.
+ * Spawns a surface ripple when a ball breaks the water plane.
  */
 export function applyBuoyancy(b, dt) {
   if (W.waterY === undefined) return;
@@ -53,20 +50,17 @@ export function applyBuoyancy(b, dt) {
   if (submerged <= 0) return;
   const frac = clamp(submerged / (b.r * 2), 0, 1);
 
-  // F_buoy = ρ_fluid · V_submerged · g  (fluid density = 1.0 baseline)
   const fluidDensity = 1.0;
   const ballVol = Math.PI * b.r * b.r * 0.001;
   const buoyForce = fluidDensity * ballVol * frac * PHYS.gravity * 1.2;
   b.vy -= buoyForce / b.mass * dt;
 
-  // viscous drag (linear + quadratic in speed)
   const v = len(b.vx, b.vy);
   const drag = (2 + v * 0.002) * frac;
   b.vx *= Math.max(0, 1 - drag * dt);
   b.vy *= Math.max(0, 1 - drag * dt);
   b.omega *= Math.max(0, 1 - drag * dt * 1.5);
 
-  // entry splash
   if (b.py + b.r < W.waterY && b.y + b.r >= W.waterY && b.vy > 60) {
     const mag = Math.min(10, b.vy * 0.03);
     for (let i = 0; i < mag * 3; i++) {
@@ -78,6 +72,58 @@ export function applyBuoyancy(b, dt) {
         color: '#6fb0e0', size: rand(1.5, 3.2), type: 'spark'
       });
     }
+    W.ripples.push({
+      x: b.x,
+      amp: clamp(b.vy * 0.05, 4, 22),
+      phase: 0,
+      life: 1.6
+    });
     Snd.noise(0.12, Math.min(0.15, b.vy * 0.0005), 3000);
+  }
+}
+
+/**
+ * Mutual attraction between magnetic balls. Called once per physics step from
+ * `step.js`. Force is capped + softened at short range so magnet pairs don't
+ * stick at infinite energy.
+ *   F_on_a_toward_b = k / (d² + ε)   along the (b-a) axis.
+ *
+ * If `W.magnetic` is false (not in the MAGNETS scene), still works so the
+ * user can drop magnet balls into any scene.
+ */
+export function applyMagnetism(dt) {
+  const mags = balls.filter(b => b.mat.magnetic);
+  if (mags.length < 2) return;
+  const k = 80000;      // strength
+  const eps = 900;       // soft-range
+  for (let i = 0; i < mags.length; i++) {
+    const a = mags[i];
+    if (a.pinned) continue;
+    for (let j = i + 1; j < mags.length; j++) {
+      const b = mags[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d2 = dx * dx + dy * dy;
+      const d = Math.sqrt(d2) || 0.001;
+      const nx = dx / d, ny = dy / d;
+      const f = k / (d2 + eps);
+      a.vx += nx * f / a.mass * dt;
+      a.vy += ny * f / a.mass * dt;
+      if (!b.pinned) {
+        b.vx -= nx * f / b.mass * dt;
+        b.vy -= ny * f / b.mass * dt;
+      }
+    }
+  }
+}
+
+/** Age water ripples + cull dead ones. Called each step from step.js. */
+export function stepRipples(dt) {
+  for (const r of W.ripples) {
+    r.phase += dt * 8;
+    r.life  -= dt;
+    r.amp   *= Math.max(0, 1 - dt * 0.8);
+  }
+  for (let i = W.ripples.length - 1; i >= 0; i--) {
+    if (W.ripples[i].life <= 0) W.ripples.splice(i, 1);
   }
 }

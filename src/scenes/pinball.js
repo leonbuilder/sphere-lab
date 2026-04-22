@@ -1,9 +1,11 @@
-/** Pinball table: sloped top rails, V-shaped bottom, 5 bumpers, bouncy side walls. */
+/** Pinball table: sloped top rails, V-shaped bottom, 5 bumpers, bouncy side
+ *  walls, and two working flippers actuated by ← and →. */
 
 import { W, addBox, setGravityUI } from '../core/world.js';
 import { rand } from '../core/math.js';
 import { Ball, balls } from '../entities/ball.js';
 import { MATERIALS } from '../entities/materials.js';
+import { spawnFlipper } from '../physics/flippers.js';
 
 export default function pinball() {
   const pad = 40;
@@ -16,12 +18,12 @@ export default function pinball() {
   W.walls.push({ x1: W.cw - pad - 40, y1: pad, x2: W.cw - pad, y2: pad + 160 });
 
   // V at the bottom (drain + gutter sides)
-  W.walls.push({ x1: pad,        y1: W.ch - pad, x2: cx - 120, y2: W.ch - pad - 80 });
-  W.walls.push({ x1: W.cw - pad, y1: W.ch - pad, x2: cx + 120, y2: W.ch - pad - 80 });
+  W.walls.push({ x1: pad,        y1: W.ch - pad, x2: cx - 130, y2: W.ch - pad - 90 });
+  W.walls.push({ x1: W.cw - pad, y1: W.ch - pad, x2: cx + 130, y2: W.ch - pad - 90 });
 
-  // flippers (static for now — visual only)
-  W.walls.push({ x1: cx - 120, y1: W.ch - pad - 80, x2: cx - 40, y2: W.ch - pad - 30, flipper: true });
-  W.walls.push({ x1: cx + 120, y1: W.ch - pad - 80, x2: cx + 40, y2: W.ch - pad - 30, flipper: true });
+  // flippers — actual swinging segments
+  spawnFlipper(cx - 130, W.ch - pad - 90, 95, -1);
+  spawnFlipper(cx + 130, W.ch - pad - 90, 95, +1);
 
   // bumpers
   W.pegs.push({ x: cx - 140, y: W.ch / 2 - 80,  r: 28, bumper: true });
