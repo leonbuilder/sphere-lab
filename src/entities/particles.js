@@ -1,10 +1,12 @@
 /**
- * Transient FX pool — sparks + smoke + heat shimmer + impact rings.
- * Integration + culling is in `physics/step.js`; this file just owns the
- * shared array + spawn helpers.
+ * Transient FX pool — sparks, smoke, expanding rings, material-specific
+ * impact debris (sparkle, chip, dust), and shatter shards.
+ *
+ * Integration + culling is in `physics/step.js`; this file owns the shared
+ * array + spawn helpers.
  */
 
-import { rand } from '../core/math.js';
+import { TAU, rand } from '../core/math.js';
 
 /**
  * @typedef {Object} Particle
@@ -14,14 +16,18 @@ import { rand } from '../core/math.js';
  * @property {number} maxLife
  * @property {string} color
  * @property {number} size
- * @property {'spark'|'smoke'|'ring'} type
- * @property {number} [ringR0]   — starting radius (rings expand from this)
- * @property {number} [ringR1]   — terminal radius at life=0
+ * @property {'spark'|'smoke'|'ring'|'sparkle'|'chip'|'dust'|'shard'} type
+ * @property {number} [ringR0]
+ * @property {number} [ringR1]
+ * @property {number} [rot]      — shard orientation
+ * @property {number} [rotV]     — shard angular velocity
  */
 
 /** @type {Particle[]} */
 export const particles = [];
 
+/** Generic normal-direction spark burst. Used for steel impacts + as the
+ *  default if a material has no dedicated FX. */
 export function spawnImpact(x, y, nx, ny, magnitude, color) {
   const n = Math.min(18, Math.floor(magnitude * 0.03));
   for (let i = 0; i < n; i++) {
@@ -36,7 +42,6 @@ export function spawnImpact(x, y, nx, ny, magnitude, color) {
       type: 'spark'
     });
   }
-  // on high-energy impacts, also drop an expanding ring
   if (magnitude > 80) {
     particles.push({
       x, y, vx: 0, vy: 0,
@@ -66,5 +71,70 @@ export function spawnHeatShimmer(x, y, heat) {
     vx: rand(-20, 20), vy: -rand(40, 110),
     life: 0.8, maxLife: 0.8,
     color: '#ff804044', size: rand(3, 6), type: 'smoke'
+  });
+}
+
+/** Glass impact — tiny reflective specks that fade quickly. */
+export function spawnSparkle(x, y, nx, ny, magnitude, color = '#ccf0ff') {
+  const n = Math.min(14, Math.floor(magnitude * 0.04));
+  for (let i = 0; i < n; i++) {
+    const a = Math.atan2(ny, nx) + rand(-1.1, 1.1);
+    const sp = rand(90, 260);
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: rand(0.18, 0.45), maxLife: 0.45,
+      color,
+      size: rand(0.8, 1.8),
+      type: 'sparkle'
+    });
+  }
+}
+
+/** Ice impact — small chips flinging outward with gravity + longer life. */
+export function spawnChip(x, y, nx, ny, magnitude, color = '#d0ebff') {
+  const n = Math.min(10, 2 + Math.floor(magnitude * 0.02));
+  for (let i = 0; i < n; i++) {
+    const a = Math.atan2(ny, nx) + rand(-0.9, 0.9);
+    const sp = rand(60, 220);
+    particles.push({
+      x, y,
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60,
+      life: rand(0.6, 1.3), maxLife: 1.3,
+      color,
+      size: rand(1.2, 2.6),
+      type: 'chip'
+    });
+  }
+}
+
+/** Bowling / matte impact — low dust puff. */
+export function spawnDust(x, y, magnitude, color = '#a08670') {
+  const n = Math.min(8, Math.floor(magnitude * 0.015));
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, TAU);
+    const sp = rand(20, 70);
+    particles.push({
+      x: x + rand(-4, 4), y: y + rand(-2, 2),
+      vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 30,
+      life: rand(0.7, 1.2), maxLife: 1.2,
+      color,
+      size: rand(3, 7),
+      type: 'dust'
+    });
+  }
+}
+
+/** Bigger, slower chunk fling used by fracture. Looks like sharded glass/ice. */
+export function spawnShard(x, y, vx, vy, color) {
+  particles.push({
+    x, y,
+    vx: vx + rand(-40, 40), vy: vy + rand(-60, 20),
+    life: rand(0.8, 1.4), maxLife: 1.4,
+    color,
+    size: rand(2.5, 4.5),
+    type: 'shard',
+    rot: rand(0, TAU),
+    rotV: rand(-12, 12)
   });
 }

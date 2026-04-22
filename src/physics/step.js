@@ -54,9 +54,18 @@ export function physicsStep(dt) {
 
   for (const b of balls) {
     b.life += dt;
-    b.squash = lerp(b.squash, 1, clamp(dt * 20, 0, 1));
+    // squash recovery rate depends on material: rubber recovers slowly (bouncy
+    // memory), steel snaps back instantly (rigid).
+    const squashRate = 20 - (b.mat.deform || 0.4) * 15;
+    b.squash = lerp(b.squash, 1, clamp(dt * squashRate, 0, 1));
     b.heat *= 0.996;
     if (b.heat > 0.3) { spawnHeatShimmer(b.x, b.y - b.r, b.heat); wake(b); }
+
+    // lifespan (fragments) — count down + mark for removal
+    if (b.lifespan !== undefined) {
+      b.lifespan -= dt;
+      if (b.lifespan <= 0) { b._dead = true; continue; }
+    }
 
     if (b.pinned) { b.vx = b.vy = b.omega = 0; continue; }
 
@@ -203,21 +212,33 @@ export function physicsStep(dt) {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
     }
-    if (p.type === 'smoke') {
-      p.size *= 1 + dt * 0.4;
-      p.vx *= 1 - dt * 1.2;
-      p.vy *= 1 - dt * 1.2;
-    } else if (p.type === 'spark') {
-      p.vx *= 1 - dt * 0.6;
-      p.vy *= 1 - dt * 0.6;
-      if (PHYS.gravityOn) p.vy += 400 * dt;
+    switch (p.type) {
+      case 'smoke':
+      case 'dust':
+        p.size *= 1 + dt * 0.4;
+        p.vx *= 1 - dt * 1.2;
+        p.vy *= 1 - dt * 1.2;
+        break;
+      case 'spark':
+      case 'sparkle':
+        p.vx *= 1 - dt * 0.6;
+        p.vy *= 1 - dt * 0.6;
+        if (PHYS.gravityOn) p.vy += 400 * dt;
+        break;
+      case 'chip':
+      case 'shard':
+        p.vx *= 1 - dt * 0.35;
+        p.vy *= 1 - dt * 0.35;
+        if (PHYS.gravityOn) p.vy += 600 * dt;   // chips fall
+        if (p.rotV !== undefined) p.rot = (p.rot || 0) + p.rotV * dt;
+        break;
     }
   }
   for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
 
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];
-    if (b.x < -800 || b.x > W.cw + 800 || b.y > W.ch + 600 || b.y < -500) {
+    if (b._dead || b.x < -800 || b.x > W.cw + 800 || b.y > W.ch + 600 || b.y < -500) {
       balls.splice(i, 1);
     }
   }

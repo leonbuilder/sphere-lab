@@ -53,6 +53,13 @@ export class Ball {
     this.sleeping = false;
     /** Accumulator — how long we've been "resting". Reset on meaningful motion. */
     this.restTime = 0;
+    /** Optional — seconds remaining before auto-removal. Used by fragments
+     *  spawned by `physics/fracture.js`. Undefined = lives forever. */
+    /** @type {number | undefined} */
+    this.lifespan = undefined;
+    /** If the ball was spawned from a fracture, carry a separate flag so it
+     *  doesn't recursively shatter and so the renderer can fade it out. */
+    this.isFragment = false;
   }
 
   kineticEnergy() {

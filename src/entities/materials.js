@@ -1,12 +1,23 @@
 /**
- * Ball materials.
+ * Ball materials — physically-motivated properties.
  *
- * Each entry is a constant describing how a ball of that material looks,
- * collides, and sounds. Adding a material? It will automatically appear in the
- * sidebar palette, and the first 9 get the 1..9 hotkeys.
+ * Densities are relative to water (g/cm³), scaled down slightly so simulation
+ * stays numerically nice. They produce realistic mass ratios: a gold ball is
+ * ~14× heavier than a rubber ball of the same size.
  *
- * `magnetic` is an optional flag read by `physics/forces.js::applyMagnetism`
- * to decide whether two balls should attract each other.
+ * `deform` (0..1) drives impact visuals + squash recovery speed:
+ *   0   — fully rigid (glass, ice). Squash is bypassed; fracture may occur.
+ *   0.3 — stiff (bowling, magnet, steel). Brief flicker of compression.
+ *   0.6 — malleable (gold). Holds the dent a while.
+ *   1.0 — elastomer (rubber, mercury). Big compression, slow recovery.
+ *
+ * `fragile` materials break apart above a velocity threshold (see
+ * `physics/fracture.js`).
+ *
+ * `chip` materials leave a small debris particle on every collision.
+ *
+ * `fluid` materials try to merge with each other at low relative speed
+ * (mercury, intended).
  */
 
 /**
@@ -15,32 +26,36 @@
 
 /**
  * @typedef {Object} Material
- * @property {string} name         — display name, uppercase for back-compat
- * @property {string} color        — base color, `#rrggbb`
- * @property {number} density      — mass = r²·density·0.001
- * @property {number} restitution  — base coefficient of restitution [0..1]
- * @property {number} friction     — surface friction μ
- * @property {number} metallic     — 0..1, drives metallic env reflection
- * @property {number} glow         — bloom contribution
- * @property {number} refract      — glass lens strength [0..1]; <0.3 = solid
- * @property {number} pitch        — impact synth base frequency (Hz)
+ * @property {string} name
+ * @property {string} color
+ * @property {number} density
+ * @property {number} restitution
+ * @property {number} friction
+ * @property {number} metallic
+ * @property {number} glow
+ * @property {number} refract
+ * @property {number} pitch
  * @property {OscillatorType} timbre
- * @property {boolean} [magnetic]  — if true, attracts/repels other magnetic balls
+ * @property {number}  [deform]    — 0 rigid .. 1 elastomer (squash amount + hold)
+ * @property {boolean} [fragile]   — can shatter on hard impact
+ * @property {number}  [chip]      — probability of a debris chip per collision (0..1)
+ * @property {boolean} [magnetic]  — attracts other magnetic balls
+ * @property {boolean} [fluid]     — tries to merge with similar fluid on contact
  */
 
 /** @type {Record<MaterialId, Material>} */
 export const MATERIALS = {
-  steel:   { name: 'STEEL',   color: '#b8c5d4', density: 2.8, restitution: 0.55, friction: 0.35, metallic: 0.9,  glow: 0,    refract: 0,   pitch: 600,  timbre: 'triangle' },
-  rubber:  { name: 'RUBBER',  color: '#ff5576', density: 1.0, restitution: 0.88, friction: 0.75, metallic: 0.05, glow: 0,    refract: 0,   pitch: 260,  timbre: 'sine'     },
-  glass:   { name: 'GLASS',   color: '#8fd0ff', density: 1.4, restitution: 0.95, friction: 0.12, metallic: 0.2,  glow: 0,    refract: 0.9, pitch: 1400, timbre: 'sine'     },
-  bowling: { name: 'BOWLING', color: '#1a1f28', density: 4.5, restitution: 0.25, friction: 0.85, metallic: 0.4,  glow: 0,    refract: 0,   pitch: 140,  timbre: 'square'   },
-  neon:    { name: 'NEON',    color: '#4affb4', density: 0.9, restitution: 0.78, friction: 0.4,  metallic: 0,    glow: 1.0,  refract: 0,   pitch: 900,  timbre: 'sine'     },
-  gold:    { name: 'GOLD',    color: '#ffc850', density: 6.0, restitution: 0.5,  friction: 0.3,  metallic: 1.0,  glow: 0.2,  refract: 0,   pitch: 420,  timbre: 'triangle' },
-  plasma:  { name: 'PLASMA',  color: '#c878ff', density: 0.6, restitution: 0.65, friction: 0.2,  metallic: 0,    glow: 1.2,  refract: 0,   pitch: 1600, timbre: 'sawtooth' },
-  ice:     { name: 'ICE',     color: '#c8e8ff', density: 1.1, restitution: 0.3,  friction: 0.05, metallic: 0.1,  glow: 0.15, refract: 0.6, pitch: 1100, timbre: 'sine'     },
-  magnet:  { name: 'MAGNET',  color: '#e65050', density: 3.2, restitution: 0.4,  friction: 0.5,  metallic: 0.55, glow: 0.3,  refract: 0,   pitch: 340,  timbre: 'square',   magnetic: true },
-  mercury: { name: 'MERCURY', color: '#d6dfe8', density: 9.0, restitution: 0.35, friction: 0.08, metallic: 1.0,  glow: 0.05, refract: 0.15,pitch: 300,  timbre: 'triangle' }
+  steel:   { name: 'STEEL',   color: '#c0ccdc', density: 7.8,  restitution: 0.62, friction: 0.35, metallic: 0.95, glow: 0,    refract: 0,    pitch: 680,  timbre: 'triangle', deform: 0.12 },
+  rubber:  { name: 'RUBBER',  color: '#ff5576', density: 1.1,  restitution: 0.88, friction: 0.80, metallic: 0.03, glow: 0,    refract: 0,    pitch: 260,  timbre: 'sine',     deform: 1.0  },
+  glass:   { name: 'GLASS',   color: '#8fd0ff', density: 2.5,  restitution: 0.95, friction: 0.10, metallic: 0.20, glow: 0,    refract: 0.9,  pitch: 1500, timbre: 'sine',     deform: 0.0,  fragile: true },
+  bowling: { name: 'BOWLING', color: '#1a1f28', density: 3.5,  restitution: 0.22, friction: 0.60, metallic: 0.35, glow: 0,    refract: 0,    pitch: 120,  timbre: 'square',   deform: 0.35 },
+  neon:    { name: 'NEON',    color: '#4affb4', density: 0.9,  restitution: 0.78, friction: 0.40, metallic: 0,    glow: 1.0,  refract: 0,    pitch: 900,  timbre: 'sine',     deform: 0.55 },
+  gold:    { name: 'GOLD',    color: '#ffc850', density: 15.0, restitution: 0.35, friction: 0.32, metallic: 1.0,  glow: 0.2,  refract: 0,    pitch: 440,  timbre: 'triangle', deform: 0.60 },
+  plasma:  { name: 'PLASMA',  color: '#c878ff', density: 0.3,  restitution: 0.70, friction: 0.18, metallic: 0,    glow: 1.2,  refract: 0,    pitch: 1700, timbre: 'sawtooth', deform: 0.85 },
+  ice:     { name: 'ICE',     color: '#c8e8ff', density: 0.92, restitution: 0.32, friction: 0.04, metallic: 0.10, glow: 0.15, refract: 0.55, pitch: 1100, timbre: 'sine',     deform: 0.0,  fragile: true, chip: 0.25 },
+  magnet:  { name: 'MAGNET',  color: '#e65050', density: 5.0,  restitution: 0.40, friction: 0.55, metallic: 0.55, glow: 0.3,  refract: 0,    pitch: 320,  timbre: 'square',   deform: 0.25, magnetic: true },
+  mercury: { name: 'MERCURY', color: '#d6dfe8', density: 13.5, restitution: 0.22, friction: 0.08, metallic: 1.0,  glow: 0.05, refract: 0.15, pitch: 260,  timbre: 'triangle', deform: 0.95, fluid: true }
 };
 
-/** @type {MaterialId[]} — stable iteration order; first 9 get 1..9 hotkeys. */
+/** @type {MaterialId[]} */
 export const MAT_KEYS = /** @type {MaterialId[]} */ (Object.keys(MATERIALS));

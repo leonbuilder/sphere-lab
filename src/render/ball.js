@@ -100,6 +100,14 @@ export function drawBall(tx, b) {
   const { x, y, r, mat } = b;
   const squashAmt = b.squash;
 
+  // fade fragments in their last 0.8 s of life
+  let alphaScale = 1;
+  if (b.lifespan !== undefined && b.lifespan < 0.8) {
+    alphaScale = Math.max(0, b.lifespan / 0.8);
+    tx.save();
+    tx.globalAlpha = alphaScale;
+  }
+
   drawMotionStreak(tx, b);
 
   tx.save();
@@ -265,6 +273,10 @@ export function drawBall(tx, b) {
       tx.arc(x, y, r + 6, 0, da * Math.sign(b.omega), b.omega < 0);
       tx.stroke();
     }
+  }
+
+  if (b.lifespan !== undefined && b.lifespan < 0.8) {
+    tx.restore();
   }
 }
 

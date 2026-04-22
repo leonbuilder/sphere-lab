@@ -61,6 +61,32 @@ index.html
                     └── fpsGraph.js                 HUD sparkline
 ```
 
+## Material realism
+
+Each material in `src/entities/materials.js` is tuned to feel physically
+distinct. Densities are (approximately) their real-world values in g/cm³ —
+gold is ≈14× the mass of rubber at the same radius.
+
+| Material | Density | Bounce | Friction | Special |
+| -------- | ------- | ------ | -------- | ------- |
+| Steel    | 7.8     | 0.62   | 0.35     | Sharp ping + warm sparks + metallic ring |
+| Rubber   | 1.1     | 0.88   | 0.80     | `deform=1` (big squash, slow recovery), muffled thud |
+| Glass    | 2.5     | 0.95   | 0.10     | **Fragile** above 550 px/s, sparkle FX, tink sound |
+| Bowling  | 3.5     | 0.22   | 0.60     | Deep thud, dust puff, absorbs energy |
+| Neon     | 0.9     | 0.78   | 0.40     | Emissive, colored sparkle |
+| Gold     | 15.0    | 0.35   | 0.32     | Very heavy, `deform=0.6` (dents), warm ding |
+| Plasma   | 0.3     | 0.70   | 0.18     | Detuned buzz, bright sparkle, lots of glow |
+| Ice      | 0.92    | 0.32   | 0.04     | **Fragile** above 380 px/s, `chip=0.25` (chips every hit), floats |
+| Magnet   | 5.0     | 0.40   | 0.55     | Mutual `1/r²` attraction |
+| Mercury  | 13.5    | 0.22   | 0.08     | `fluid=true` — merges with other mercury at low relative speed |
+
+Key behaviours:
+- **Squash amplitude + recovery** scale with `material.deform`. Rubber compresses heavily and stays compressed for ~150 ms; steel snaps back within one frame.
+- **Fragile materials** (glass, ice) shatter above a velocity threshold. See `src/physics/fracture.js` — spawns 6-9 smaller fragment balls with a ~3 s lifespan + particle shards + a shatter-specific sound.
+- **Fragments** (`b.isFragment === true`) don't recursively shatter and fade out in their last 0.8 s.
+- **Chip materials** emit a debris chip every collision (not just at fracture) — ice perpetually sheds as it rolls.
+- **Fluid materials** (`material.fluid`) of the same kind merge on slow contact, conserving mass (area in 2D).
+
 ## Core concepts
 
 - **`PHYS`** (`core/config.js`) holds mutable sim parameters. Every frame reads

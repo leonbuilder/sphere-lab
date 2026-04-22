@@ -66,7 +66,7 @@ export function drawParticles(tx) {
     } else if (p.type === 'smoke') {
       const g = tx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
       g.addColorStop(0, p.color);
-      g.addColorStop(1, withAlpha(p.color, 0));  // correct transparent endpoint
+      g.addColorStop(1, withAlpha(p.color, 0));
       tx.fillStyle = g;
       tx.beginPath();
       tx.arc(p.x, p.y, p.size, 0, TAU);
@@ -77,6 +77,54 @@ export function drawParticles(tx) {
       tx.strokeStyle = p.color;
       tx.lineWidth = 2 * a + 0.5;
       tx.beginPath(); tx.arc(p.x, p.y, rr, 0, TAU); tx.stroke();
+    } else if (p.type === 'sparkle') {
+      // bright cross-shaped twinkle — glass + plasma impacts
+      tx.globalAlpha = a;
+      tx.strokeStyle = p.color;
+      tx.lineWidth = 0.8;
+      const s = p.size * (1 + 2 * (1 - a));
+      tx.beginPath();
+      tx.moveTo(p.x - s, p.y); tx.lineTo(p.x + s, p.y);
+      tx.moveTo(p.x, p.y - s); tx.lineTo(p.x, p.y + s);
+      tx.stroke();
+      tx.fillStyle = p.color;
+      tx.beginPath(); tx.arc(p.x, p.y, 0.9, 0, TAU); tx.fill();
+    } else if (p.type === 'chip') {
+      // small angular shard — pointed stroke
+      tx.fillStyle = p.color;
+      tx.strokeStyle = withAlpha(p.color, a * 0.5);
+      tx.beginPath();
+      const s = p.size;
+      tx.moveTo(p.x - s, p.y);
+      tx.lineTo(p.x, p.y - s);
+      tx.lineTo(p.x + s * 0.6, p.y + s * 0.3);
+      tx.closePath();
+      tx.fill();
+    } else if (p.type === 'dust') {
+      // wide soft cloud
+      const g = tx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 1.4);
+      g.addColorStop(0, withAlpha(p.color, 0.35 * a));
+      g.addColorStop(1, withAlpha(p.color, 0));
+      tx.fillStyle = g;
+      tx.globalAlpha = 1;
+      tx.beginPath(); tx.arc(p.x, p.y, p.size * 1.4, 0, TAU); tx.fill();
+    } else if (p.type === 'shard') {
+      // tumbling fragment — thin triangle that rotates
+      tx.save();
+      tx.translate(p.x, p.y);
+      tx.rotate(p.rot ?? 0);
+      tx.fillStyle = p.color;
+      tx.strokeStyle = 'rgba(255,255,255,0.35)';
+      tx.lineWidth = 0.6;
+      const s = p.size;
+      tx.beginPath();
+      tx.moveTo(-s, -s * 0.4);
+      tx.lineTo(s,  -s * 0.1);
+      tx.lineTo(s * 0.3, s * 0.8);
+      tx.closePath();
+      tx.fill();
+      tx.stroke();
+      tx.restore();
     }
   }
   tx.globalAlpha = 1;

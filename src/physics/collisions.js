@@ -4,20 +4,93 @@
  *   collideWall(b, w)  — ball/line (incl. conveyor-belt drag)
  *   collidePeg(b, p)   — ball/disc (incl. pinball bumper kick)
  *
- * Restitution combines via `min(eA, eB)` — the softer material dominates
- * the bounce, which matches experiment better than an arithmetic average.
- *
- * Every contact wakes both participants so resting stacks respond to
- * nudges correctly.
+ * Material-aware behaviour:
+ *   • Restitution combines as `min(eA, eB)` — softer wins.
+ *   • Squash depth + angle set from `material.deform` (rubber big, glass zero).
+ *   • Impact FX are dispatched per material (sparks / sparkle / chip / dust).
+ *   • Fragile materials (glass, ice) fracture above a velocity threshold.
+ *   • `chip` materials emit debris every hit (ice always sheds chips).
+ *   • `fluid` materials of the same kind merge on slow contact (mercury).
  */
 
 import { clamp, rand } from '../core/math.js';
 import { PHYS } from '../core/config.js';
-import { spawnImpact } from '../entities/particles.js';
+import {
+  spawnImpact, spawnSparkle, spawnChip, spawnDust, spawnSmoke
+} from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
 import { velRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from './materialMods.js';
 import { stats } from './stats.js';
-import { wake } from '../entities/ball.js';
+import { wake, balls, Ball } from '../entities/ball.js';
+import { tryFracture } from './fracture.js';
+
+/** Dispatch material-specific visual debris for one contact. */
+function spawnImpactFor(mat, x, y, nx, ny, magnitude) {
+  switch (mat.name) {
+    case 'GLASS':
+      return spawnSparkle(x, y, nx, ny, magnitude, '#cfeaff');
+    case 'ICE':
+      return spawnChip(x, y, nx, ny, magnitude, '#d6ecff');
+    case 'BOWLING':
+      return spawnDust(x, y, magnitude, '#857970');
+    case 'GOLD':
+      return spawnImpact(x, y, nx, ny, magnitude * 0.5, '#ffd970');
+    case 'STEEL':
+      return spawnImpact(x, y, nx, ny, magnitude, '#ffe0a0');
+    case 'PLASMA':
+      return spawnSparkle(x, y, nx, ny, magnitude, '#e0a0ff');
+    case 'NEON':
+      return spawnSparkle(x, y, nx, ny, magnitude, mat.color);
+    case 'RUBBER':
+      // rubber doesn't fling debris — a small deformation puff is enough
+      if (magnitude > 40) spawnSmoke(x, y, 0, 0, 'rgba(120,60,70,0.35)', 0.35);
+      return;
+    case 'MERCURY':
+      // silky liquid — no visible chips
+      return;
+    case 'MAGNET':
+      return spawnImpact(x, y, nx, ny, magnitude * 0.5, '#ff8080');
+    default:
+      return spawnImpact(x, y, nx, ny, magnitude);
+  }
+}
+
+/**
+ * Mercury-style merge. Two fluid balls of the same material at low relative
+ * velocity combine into one: area (∝ r²) conserved, mass conserved, velocity
+ * is mass-weighted. Prevents them from stacking as discrete balls.
+ */
+function tryFluidMerge(a, b) {
+  if (!a.mat.fluid || a.mat.name !== b.mat.name) return false;
+  if (a.pinned || b.pinned) return false;
+  const dvx = b.vx - a.vx, dvy = b.vy - a.vy;
+  const relSpeed = Math.sqrt(dvx * dvx + dvy * dvy);
+  const combinedR = Math.sqrt(a.r * a.r + b.r * b.r);
+  if (relSpeed > 60 || combinedR > 42) return false;
+
+  const total = a.mass + b.mass;
+  const nx = (a.mass * a.x + b.mass * b.x) / total;
+  const ny = (a.mass * a.y + b.mass * b.y) / total;
+  const nvx = (a.mass * a.vx + b.mass * b.vx) / total;
+  const nvy = (a.mass * a.vy + b.mass * b.vy) / total;
+
+  // grow `a` into the merged ball; drop `b`
+  a.x = nx; a.y = ny;
+  a.vx = nvx; a.vy = nvy;
+  a.r = combinedR;
+  a.area = Math.PI * combinedR * combinedR;
+  a.mass = combinedR * combinedR * a.mat.density * 0.001;
+  a.inertia = 0.5 * a.mass * combinedR * combinedR;
+  a.omega *= 0.5;
+  wake(a);
+
+  const idx = balls.indexOf(b);
+  if (idx >= 0) balls.splice(idx, 1);
+
+  Snd.noise(0.08, 0.14, 1800);
+  stats.collisions++;
+  return true;
+}
 
 export function separateBalls(a, b) {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -42,13 +115,15 @@ export function collideBalls(a, b) {
   const nx = dx / d, ny = dy / d;
   const tx = -ny, ty = nx;
 
+  // mercury merge — check before resolving contact
+  if (tryFluidMerge(a, b)) return;
+
   separateBalls(a, b);
 
   const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
   const vn = rvx * nx + rvy * ny;
   if (vn > 0) return;
 
-  // softer material dominates — min() is closer to real behaviour than avg
   const baseE = Math.min(a.mat.restitution, b.mat.restitution);
   const e = baseE * PHYS.restitutionMul * velRestScale(Math.abs(vn)) * heatRestMod(a) * heatRestMod(b);
   const invMa = a.pinned ? 0 : 1 / a.mass;
@@ -84,16 +159,34 @@ export function collideBalls(a, b) {
 
   wake(a); wake(b);
 
+  // per-hit chip emission for materials with probabilistic chip shedding (ice)
+  if (a.mat.chip && Math.random() < a.mat.chip) spawnChip(a.x + nx * a.r * 0.8, a.y + ny * a.r * 0.8, nx, ny, 40, a.mat.color);
+  if (b.mat.chip && Math.random() < b.mat.chip) spawnChip(b.x - nx * b.r * 0.8, b.y - ny * b.r * 0.8, -nx, -ny, 40, b.mat.color);
+
+  // fracture — fragile materials break apart above a velocity threshold.
+  // Impulses were already applied, so the other ball still gets the kick.
+  const aFractured = tryFracture(a, Math.abs(vn));
+  const bFractured = tryFracture(b, Math.abs(vn));
+
   const mag = Math.abs(j);
   if (mag > 2) {
     const hx = (a.x + b.x) * 0.5;
     const hy = (a.y + b.y) * 0.5;
-    spawnImpact(hx, hy, nx, ny, mag, a.heat > 0.3 ? '#ffb040' : '#ffffff');
-    a.squash = 1 - Math.min(0.32, mag * 0.0025);
-    a.squashAng = Math.atan2(ny, nx);
-    b.squash = 1 - Math.min(0.32, mag * 0.0025);
-    b.squashAng = Math.atan2(-ny, -nx);
-    Snd.collision(a.mat, b.mat, mag);
+
+    if (!aFractured) {
+      spawnImpactFor(a.mat, hx, hy, nx, ny, mag);
+      // squash amplitude scales with material deformability
+      const dA = (a.mat.deform ?? 0.4);
+      a.squash = 1 - Math.min(0.35 * dA, mag * 0.0025 * dA);
+      a.squashAng = Math.atan2(ny, nx);
+    }
+    if (!bFractured) {
+      spawnImpactFor(b.mat, hx, hy, -nx, -ny, mag);
+      const dB = (b.mat.deform ?? 0.4);
+      b.squash = 1 - Math.min(0.35 * dB, mag * 0.0025 * dB);
+      b.squashAng = Math.atan2(-ny, -nx);
+    }
+    if (!aFractured && !bFractured) Snd.collision(a.mat, b.mat, mag);
   }
   stats.collisions++;
 }
@@ -153,10 +246,17 @@ export function collideWall(b, wall) {
 
   wake(b);
 
+  // chip emission on wall hits too
+  if (b.mat.chip && Math.random() < b.mat.chip) spawnChip(cx, cy, nx, ny, 40, b.mat.color);
+
+  // wall fracture check
+  if (tryFracture(b, Math.abs(vn))) return;
+
   const mag = Math.abs(vn) * b.mass;
   if (mag > 5) {
-    spawnImpact(cx, cy, nx, ny, mag * 0.8, '#b0c0d0');
-    b.squash = 1 - Math.min(0.38, Math.abs(vn) * 0.0008);
+    spawnImpactFor(b.mat, cx, cy, nx, ny, mag * 0.8);
+    const dF = (b.mat.deform ?? 0.4);
+    b.squash = 1 - Math.min(0.4 * dF, Math.abs(vn) * 0.0008 * dF);
     b.squashAng = Math.atan2(ny, nx);
     Snd.wall(b.mat, mag);
   }
@@ -192,9 +292,11 @@ export function collidePeg(b, peg) {
 
   wake(b);
 
+  if (tryFracture(b, Math.abs(vn))) return;
+
   const mag = Math.abs(vn) * b.mass;
   if (mag > 4) {
-    spawnImpact(peg.x + nx * peg.r, peg.y + ny * peg.r, nx, ny, mag, peg.bumper ? '#ffcc40' : '#ffcc66');
+    spawnImpactFor(b.mat, peg.x + nx * peg.r, peg.y + ny * peg.r, nx, ny, mag);
     if (peg.bumper) {
       b.vx += nx * 500 * invMass(b);
       b.vy += ny * 500 * invMass(b);
