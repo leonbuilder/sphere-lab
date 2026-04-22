@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SPHERE LAB — Realistic Ball Physics</title>
+<link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="panel" id="top">
+  <button class="btn" data-scene="sandbox">SANDBOX</button>
+  <button class="btn" data-scene="billiards">BILLIARDS</button>
+  <button class="btn" data-scene="plinko">PLINKO</button>
+  <button class="btn" data-scene="cradle">CRADLE</button>
+  <button class="btn" data-scene="vortex">VORTEX</button>
+  <button class="btn" data-scene="tower">TOWER</button>
+  <button class="btn" data-scene="galton">GALTON</button>
+  <button class="btn" data-scene="pinball">PINBALL</button>
+  <button class="btn" data-scene="cloth">CLOTH</button>
+  <button class="btn" data-scene="domino">DOMINOES</button>
+  <button class="btn" data-scene="solar">SOLAR</button>
+  <button class="btn" data-scene="rain">RAIN</button>
+  <button class="btn" data-scene="jelly">JELLY</button>
+  <button class="btn" data-scene="water">WATER</button>
+</div>
+
+<div id="mode-indicator">SPAWN MODE</div>
+
+<div class="panel" id="left">
+  <div class="title-bar">SPHERE LAB</div>
+  <h3>Tool</h3>
+  <div class="toggle-row" id="tool-row">
+    <button class="btn tool active" data-tool="spawn">SPAWN</button>
+    <button class="btn tool" data-tool="grab">GRAB</button>
+    <button class="btn tool" data-tool="draw">DRAW</button>
+    <button class="btn tool" data-tool="erase">ERASE</button>
+    <button class="btn tool" data-tool="link">LINK</button>
+    <button class="btn tool" data-tool="pin">PIN</button>
+    <button class="btn tool" data-tool="push">PUSH</button>
+    <button class="btn tool" data-tool="heat">HEAT</button>
+  </div>
+  <h3>Material</h3>
+  <div class="col" id="ball-types"></div>
+  <h3>Actions</h3>
+  <div class="col">
+    <button class="btn" id="btn-clear">CLEAR [C]</button>
+    <button class="btn" id="btn-pause">PAUSE [SPACE]</button>
+    <button class="btn" id="btn-slowmo">SLOW-MO [F]</button>
+    <button class="btn" id="btn-gravity">GRAVITY ON [G]</button>
+    <button class="btn" id="btn-reset-cam">RESET VIEW [0]</button>
+  </div>
+</div>
+
+<div class="panel" id="right">
+  <h3>Physics</h3>
+  <div class="row"><label>Gravity</label><input type="range" id="s-g" min="0" max="2000" value="900" step="10"><span class="value" id="v-g">900</span></div>
+  <div class="row"><label>Drag</label><input type="range" id="s-d" min="0" max="50" value="5" step="1"><span class="value" id="v-d">0.05</span></div>
+  <div class="row"><label>Bounce</label><input type="range" id="s-e" min="0" max="120" value="100" step="1"><span class="value" id="v-e">1.00</span></div>
+  <div class="row"><label>Friction</label><input type="range" id="s-f" min="0" max="100" value="50" step="1"><span class="value" id="v-f">0.50</span></div>
+  <div class="row"><label>Magnus</label><input type="range" id="s-m" min="0" max="200" value="60" step="1"><span class="value" id="v-m">0.60</span></div>
+  <div class="row"><label>Ball Size</label><input type="range" id="s-r" min="6" max="60" value="20" step="1"><span class="value" id="v-r">20</span></div>
+  <div class="row"><label>Wind</label><input type="range" id="s-w" min="-400" max="400" value="0" step="10"><span class="value" id="v-w">0</span></div>
+
+  <h3>Visual</h3>
+  <div class="toggle-row">
+    <button class="btn tool active" id="t-bloom">BLOOM</button>
+    <button class="btn tool active" id="t-shadow">SHADOW</button>
+    <button class="btn tool" id="t-blur">BLUR</button>
+    <button class="btn tool" id="t-trail">TRAIL</button>
+    <button class="btn tool" id="t-vec">VECTORS</button>
+    <button class="btn tool active" id="t-sound">SOUND</button>
+    <button class="btn tool active" id="t-refract">REFRACT</button>
+    <button class="btn tool active" id="t-heat">HEAT FX</button>
+    <button class="btn tool active" id="t-ao">AO</button>
+    <button class="btn tool active" id="t-aberration">CHROMA</button>
+    <button class="btn tool active" id="t-grain">GRAIN</button>
+    <button class="btn tool active" id="t-streaks">STREAKS</button>
+    <button class="btn tool active" id="t-flare">FLARE</button>
+  </div>
+
+  <h3>Stats</h3>
+  <div class="stat-row"><span>Scene</span><span class="v" id="stat-scene">SANDBOX</span></div>
+  <div class="stat-row"><span>Tool</span><span class="v" id="stat-tool">SPAWN</span></div>
+  <div class="stat-row"><span>Balls</span><span class="v" id="stat-n">0</span></div>
+  <div class="stat-row"><span>Links</span><span class="v" id="stat-links">0</span></div>
+  <div class="stat-row"><span>FPS</span><span class="v" id="stat-fps">0</span></div>
+  <div class="stat-row"><span>Collisions/s</span><span class="v" id="stat-col">0</span></div>
+  <div class="stat-row"><span>Kinetic E</span><span class="v" id="stat-e">0</span></div>
+  <div class="stat-row"><span>Zoom</span><span class="v" id="stat-zoom">1.00</span></div>
+  <div class="stat-row"><span>Pairs</span><span class="v" id="stat-pairs">0</span></div>
+  <div id="fps-graph"><canvas id="fps-canvas" width="210" height="32" style="display:block"></canvas></div>
+</div>
+
+<button class="btn" id="help-btn">? HELP</button>
+
+<div class="overlay" id="help">
+  <div class="help-box">
+    <h1>SPHERE LAB</h1>
+    <div style="color:var(--dim);letter-spacing:0.3rem;margin-bottom:10px">ADVANCED REALISTIC BALL PHYSICS</div>
+
+    <h4>TOOLS</h4>
+    <div class="help-grid">
+      <div><span class="key">SPAWN</span></div><div>Click to create, drag to slingshot</div>
+      <div><span class="key">GRAB</span></div><div>Pick up balls and fling them</div>
+      <div><span class="key">DRAW</span></div><div>Draw static walls with click-drag</div>
+      <div><span class="key">ERASE</span></div><div>Remove balls, walls, or links near cursor</div>
+      <div><span class="key">LINK</span></div><div>Click two balls to create a spring connection</div>
+      <div><span class="key">PIN</span></div><div>Toggle whether a ball is fixed in place</div>
+      <div><span class="key">PUSH</span></div><div>Hold to push balls away radially</div>
+      <div><span class="key">HEAT</span></div><div>Paint heat onto balls (causes glow + elasticity changes)</div>
+    </div>
+
+    <h4>CONTROLS</h4>
+    <div class="help-grid">
+      <div><span class="key">SHIFT+CLICK</span></div><div>Rapid spawn (10 balls)</div>
+      <div><span class="key">RMB</span></div><div>Radial explosion force</div>
+      <div><span class="key">MMB DRAG</span></div><div>Pan camera</div>
+      <div><span class="key">WHEEL</span></div><div>Zoom camera at cursor</div>
+      <div><span class="key">SPACE</span></div><div>Pause / resume</div>
+      <div><span class="key">F</span></div><div>Slow motion toggle</div>
+      <div><span class="key">G</span></div><div>Gravity toggle</div>
+      <div><span class="key">C</span></div><div>Clear all balls</div>
+      <div><span class="key">R</span></div><div>Reset current scene</div>
+      <div><span class="key">0</span></div><div>Reset camera view</div>
+      <div><span class="key">1-6</span></div><div>Select ball material</div>
+      <div><span class="key">Q W E R T Y U I</span></div><div>Select tool</div>
+      <div><span class="key">V</span></div><div>Toggle velocity vectors</div>
+      <div><span class="key">B</span></div><div>Toggle bloom</div>
+      <div><span class="key">M</span></div><div>Toggle motion blur</div>
+      <div><span class="key">S</span></div><div>Toggle sound</div>
+      <div><span class="key">H</span></div><div>Toggle heat FX</div>
+    </div>
+
+    <h4>PHYSICS MODEL</h4>
+    <div style="font-size:0.8rem;line-height:1.5;color:var(--fg)">
+      240Hz fixed-timestep simulation with sub-stepping for fast objects (CCD).
+      Impulse-based collisions with separate normal and tangential components.
+      Friction at contact transfers linear momentum to angular velocity (spin).
+      Spring constraints with Hooke's law plus damping. Magnus effect curves
+      spinning trajectories through air. Heat accumulates via frictive contact
+      and dissipates via radiation. Mass &prop; r&sup2;&middot;density, inertia &frac12;m&middot;r&sup2;.
+    </div>
+
+    <h4>RENDERING</h4>
+    <div style="font-size:0.8rem;line-height:1.5;color:var(--fg)">
+      Gradient-shaded spheres with material-aware lighting (metallic vs diffuse).
+      Off-screen bloom pass with 2-step blur for glowing materials.
+      Glass balls refract the scene through inverse sampling.
+      Heat glow, ambient occlusion, squash deformation, specular highlights,
+      drop shadows, motion blur, particle smoke trails.
+    </div>
+
+    <div style="margin-top:20px;text-align:center">
+      <button class="btn active" onclick="document.getElementById('help').classList.remove('show')">DISMISS</button>
+    </div>
+  </div>
+</div>
+
+<!--
+  SPHERE LAB — modular physics sandbox.
+  Scripts are plain (non-module) so index.html runs on file://
+  Order matters: each file expects its dependencies to have loaded.
+-->
+<script src="src/util.js"></script>
+<script src="src/config.js"></script>
+<script src="src/materials.js"></script>
+<script src="src/world.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/spring.js"></script>
+<script src="src/particles.js"></script>
+<script src="src/ball.js"></script>
+<script src="src/physics.js"></script>
+<script src="src/render.js"></script>
+<script src="src/scenes.js"></script>
+<script src="src/input.js"></script>
+<script src="src/ui.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>
