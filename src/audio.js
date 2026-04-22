@@ -9,7 +9,7 @@ const Snd = {
   init() {
     if (this.ctx) return;
     try {
-      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.ctx = new (window.AudioContext || window['webkitAudioContext'])();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.25;
       this.master.connect(this.ctx.destination);
