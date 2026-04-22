@@ -21,7 +21,7 @@
  */
 
 /**
- * @typedef {'steel'|'rubber'|'glass'|'bowling'|'neon'|'gold'|'plasma'|'ice'|'magnet'|'mercury'} MaterialId
+ * @typedef {'steel'|'rubber'|'glass'|'bowling'|'neon'|'gold'|'plasma'|'ice'|'magnet'|'mercury'|'diamond'} MaterialId
  */
 
 /**
@@ -59,7 +59,13 @@ export const MATERIALS = {
   plasma:  { name: 'PLASMA',  color: '#c878ff', density: 0.3,  restitution: 0.70, friction: 0.18, metallic: 0,    glow: 1.2,  refract: 0,    pitch: 1700, timbre: 'sawtooth', deform: 0.85, roll: 0.030, heatKeep: 0.9975, cond: 0.70, bounceBack: 0.70 },
   ice:     { name: 'ICE',     color: '#c8e8ff', density: 0.92, restitution: 0.32, friction: 0.04, metallic: 0.10, glow: 0.15, refract: 0.55, pitch: 1100, timbre: 'sine',     deform: 0.0,  roll: 0.004, heatKeep: 0.9993, cond: 0.50, bounceBack: 0.00, fragile: true, chip: 0.25 },
   magnet:  { name: 'MAGNET',  color: '#e65050', density: 5.0,  restitution: 0.40, friction: 0.55, metallic: 0.55, glow: 0.3,  refract: 0,    pitch: 320,  timbre: 'square',   deform: 0.25, roll: 0.080, heatKeep: 0.9980, cond: 0.80, bounceBack: 0.08, magnetic: true },
-  mercury: { name: 'MERCURY', color: '#d6dfe8', density: 13.5, restitution: 0.22, friction: 0.08, metallic: 1.0,  glow: 0.05, refract: 0.15, pitch: 260,  timbre: 'triangle', deform: 0.95, roll: 0.040, heatKeep: 0.9960, cond: 0.82, bounceBack: 0.45, fluid: true }
+  mercury: { name: 'MERCURY', color: '#d6dfe8', density: 13.5, restitution: 0.22, friction: 0.08, metallic: 1.0,  glow: 0.05, refract: 0.15, pitch: 260,  timbre: 'triangle', deform: 0.95, roll: 0.040, heatKeep: 0.9960, cond: 0.82, bounceBack: 0.45, fluid: true },
+  // Diamond — hardest natural material, peak refractive index, best thermal
+  // conductor on the periodic table. Extremely rigid (no squash), very
+  // elastic bounce, exceptional "fire" (chromatic dispersion), crystalline
+  // ring that outlasts glass. Effectively unbreakable in normal use — it
+  // doesn't get the `fragile` flag, so it never cracks or shatters.
+  diamond: { name: 'DIAMOND', color: '#e8f4ff', density: 3.52, restitution: 0.94, friction: 0.06, metallic: 0.20, glow: 0.10, refract: 1.00, pitch: 2200, timbre: 'sine',     deform: 0.0,  roll: 0.004, heatKeep: 0.9976, cond: 0.99, bounceBack: 0.00 }
 };
 
 /** @type {MaterialId[]} */

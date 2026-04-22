@@ -116,6 +116,14 @@ function spawnImpactFor(mat, x, y, nx, ny, magnitude) {
       return;
     case 'MAGNET':
       return spawnImpact(x, y, nx, ny, magnitude * 0.5, '#ff8080');
+    case 'DIAMOND': {
+      // Diamond disperses light — impact sparkles split into colored fringes.
+      spawnSparkle(x, y, nx, ny, magnitude,        '#ffffff');
+      spawnSparkle(x, y, nx, ny, magnitude * 0.55, '#ffc4ff');   // pink
+      spawnSparkle(x, y, nx, ny, magnitude * 0.55, '#a4e8ff');   // cyan
+      spawnSparkle(x, y, nx, ny, magnitude * 0.35, '#fff0b0');   // warm yellow
+      return;
+    }
     default:
       return spawnImpact(x, y, nx, ny, magnitude);
   }

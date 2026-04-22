@@ -231,6 +231,26 @@ const MODAL = {
     modes: [],
     attack: { type: 'bandpass', freq: 1200, dur: 0.070, amp: 0.60, q: 2.4 },
     reverbSend: 0.15
+  },
+  // Diamond — crystalline but much harder + brighter than glass. Very high
+  // fundamental, dense inharmonic mode stack, low internal damping so the
+  // ring lingers. Attack is an ultrahigh click (10 kHz+). Reverb send is
+  // pushed up — diamond's brilliance carries in the room response.
+  DIAMOND: {
+    resonance: 1.00,
+    baseFreq: 4500,
+    sizeExp: 1.15,
+    modes: [
+      { ratio: 1.000, amp: 1.00, decay: 0.62 },
+      { ratio: 1.533, amp: 0.85, decay: 0.48 },
+      { ratio: 2.142, amp: 0.68, decay: 0.38 },
+      { ratio: 2.817, amp: 0.52, decay: 0.30 },
+      { ratio: 3.544, amp: 0.38, decay: 0.24 },
+      { ratio: 4.311, amp: 0.26, decay: 0.19 },
+      { ratio: 5.116, amp: 0.17, decay: 0.15 }
+    ],
+    attack: { type: 'highpass', freq: 11000, dur: 0.005, amp: 0.42 },
+    reverbSend: 0.55
   }
 };
 
@@ -542,6 +562,7 @@ export const Snd = {
       case 'ICE':     return { type: 'highpass', freq: 7200, q: 1.0, gs: 1.00 };
       case 'MAGNET':  return { type: 'bandpass', freq: 1300, q: 3.5, gs: 1.00 };
       case 'MERCURY': return { type: 'lowpass',  freq: 520,  q: 0.7, gs: 0.90 };
+      case 'DIAMOND': return { type: 'highpass', freq: 8500, q: 2.5, gs: 0.95 };
       default:        return { type: 'bandpass', freq: 1500, q: 2.0, gs: 1.00 };
     }
   },

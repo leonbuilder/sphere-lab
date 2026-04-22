@@ -180,6 +180,29 @@ function getMatTexture(matName) {
       }
       break;
     }
+    case 'DIAMOND': {
+      // Sparse brilliant facet highlights — bright specks of light
+      for (let i = 0; i < 14; i++) {
+        tc.fillStyle = `rgba(255,255,255,${0.55 + Math.random() * 0.4})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.5 + Math.random() * 0.8, 0, TAU);
+        tc.fill();
+      }
+      // Dispersion hint — soft rainbow-tinged specks to suggest diamond's
+      // characteristic "fire" when the texture catches the light.
+      const rainbow = [
+        'rgba(255,170,210,0.32)', 'rgba(170,215,255,0.32)',
+        'rgba(200,255,215,0.28)', 'rgba(255,220,170,0.28)',
+        'rgba(210,180,255,0.30)'
+      ];
+      for (let i = 0; i < 9; i++) {
+        tc.fillStyle = rainbow[i % rainbow.length];
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 1.4 + Math.random() * 1.8, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
     default:
       _texCache[matName] = null;
       return null;
@@ -522,6 +545,46 @@ export function drawBall(tx, b) {
 
   tx.restore();
 
+  // Diamond brilliance — flickering cross-stars at fixed ball-local angles,
+  // additive-blended so they genuinely glint. Each star has its own drift
+  // in radius + brightness so they don't pulse in lockstep. Drawn OUTSIDE
+  // the squash transform (pinned to world) so they don't jump on impacts.
+  if (mat.name === 'DIAMOND' && !b.isFragment) {
+    tx.save();
+    tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
+    tx.globalCompositeOperation = 'lighter';
+    tx.lineCap = 'round';
+    const now = performance.now();
+    const count = 3;
+    for (let i = 0; i < count; i++) {
+      const localA = (i / count) * TAU + 0.55 + b.id * 0.17;
+      const aa = b.angle + localA;
+      const radial = 0.40 + 0.30 * Math.sin(now * 0.0022 + i * 2.3 + b.id);
+      const px = x + Math.cos(aa) * r * radial;
+      const py = y + Math.sin(aa) * r * radial;
+      const twinkle = 0.5 + 0.5 * Math.sin(now * 0.0038 + i * 1.7 + b.id * 1.3);
+      const ss = r * 0.22 * (0.6 + 0.4 * twinkle);
+      const alpha = 0.50 * twinkle + 0.15;
+      tx.strokeStyle = `rgba(255,255,255,${alpha})`;
+      tx.lineWidth = 0.9;
+      tx.beginPath();
+      tx.moveTo(px - ss, py); tx.lineTo(px + ss, py);
+      tx.moveTo(px, py - ss); tx.lineTo(px, py + ss);
+      tx.stroke();
+      // thinner diagonal rays for that gem-sparkle shape
+      const diag = ss * 0.60;
+      tx.lineWidth = 0.45;
+      tx.beginPath();
+      tx.moveTo(px - diag, py - diag); tx.lineTo(px + diag, py + diag);
+      tx.moveTo(px - diag, py + diag); tx.lineTo(px + diag, py - diag);
+      tx.stroke();
+      // tiny solid core
+      tx.fillStyle = `rgba(255,255,255,${alpha + 0.3})`;
+      tx.beginPath(); tx.arc(px, py, 0.95, 0, TAU); tx.fill();
+    }
+    tx.restore();
+  }
+
   // Fragile-ball cracks — same pin-to-world-surface pattern as dents.
   // Each crack is a short dark line extending inward from the impact
   // point, with an optional sub-branch for deeper cracks. Drawn slightly
@@ -529,7 +592,10 @@ export function drawBall(tx, b) {
   if (mat.fragile && b.cracks && b.cracks.length) {
     tx.save();
     tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
-    const crackCol = mat.name === 'ICE' ? 'rgba(60,100,140,0.85)' : 'rgba(30,50,80,0.85)';
+    const crackCol =
+      mat.name === 'ICE'     ? 'rgba(60,100,140,0.85)' :
+      mat.name === 'DIAMOND' ? 'rgba(180,210,240,0.80)' :
+                               'rgba(30,50,80,0.85)';
     tx.lineCap = 'round';
     tx.strokeStyle = crackCol;
     for (const c of b.cracks) {
