@@ -25,7 +25,7 @@ import {
   drawVortex, drawWater, drawSolarCenter, drawBallShadows, drawFlippers
 } from './render/world.js';
 import { drawBall, drawTrail } from './render/ball.js';
-import { drawAO, drawParticles, drawLensFlares } from './render/effects.js';
+import { drawAO, drawParticles, drawLensFlares, drawPlasmaArcs } from './render/effects.js';
 import { doBloomPass, doPostFX } from './render/postfx.js';
 import { renderSparkline } from './render/statsGraph.js';
 import { mouse } from './input/mouse.js';
@@ -131,6 +131,7 @@ function frame(now) {
   if (PHYS.trails) for (const b of balls) drawTrail(ctx, b);
   drawAO(ctx);
   for (const b of balls) drawBall(ctx, b);
+  drawPlasmaArcs(ctx);
   drawWater(ctx);
   drawParticles(ctx);
   drawLensFlares(ctx);

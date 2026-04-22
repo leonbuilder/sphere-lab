@@ -513,5 +513,133 @@ export const Snd = {
   },
 
   click()  { this.bonk(800, 0.04, 0.02, 'square'); },
-  spring() { this.bonk(450, 0.04, 0.04, 'triangle'); }
+  spring() { this.bonk(450, 0.04, 0.04, 'triangle'); },
+
+  /* ------------------------------------------------------------------ */
+  /*  Rolling / sliding friction — persistent per-material voices        */
+  /* ------------------------------------------------------------------ */
+  /* While impact sounds are one-shot, rolling and sliding are continuous.
+   * Each material has a shared looping noise source with a distinctive
+   * filter (rubber squeaks, ice hisses high, bowling rumbles low…). Each
+   * physics tick every rolling ball contributes to its material's mix;
+   * `commitRoll` applies the mix to a smoothed gain so transitions are
+   * seamless instead of chopped.                                        */
+
+  /** @type {Record<string, {source:AudioBufferSourceNode, filter:BiquadFilterNode, gain:GainNode, profile:any}>} */
+  _rollVoices: {},
+  /** @type {Record<string, number>} */
+  _rollMix: {},
+
+  _rollProfile(matName) {
+    switch (matName) {
+      case 'STEEL':   return { type: 'bandpass', freq: 2200, q: 6.0, gs: 1.00 };
+      case 'RUBBER':  return { type: 'bandpass', freq: 1100, q: 5.0, gs: 1.40 };
+      case 'GLASS':   return { type: 'highpass', freq: 5500, q: 1.0, gs: 0.85 };
+      case 'BOWLING': return { type: 'lowpass',  freq: 280,  q: 0.7, gs: 1.15 };
+      case 'NEON':    return { type: 'bandpass', freq: 1800, q: 3.0, gs: 0.90 };
+      case 'GOLD':    return { type: 'bandpass', freq: 850,  q: 4.0, gs: 1.00 };
+      case 'PLASMA':  return { type: 'bandpass', freq: 3200, q: 8.0, gs: 1.00 };
+      case 'ICE':     return { type: 'highpass', freq: 7200, q: 1.0, gs: 1.00 };
+      case 'MAGNET':  return { type: 'bandpass', freq: 1300, q: 3.5, gs: 1.00 };
+      case 'MERCURY': return { type: 'lowpass',  freq: 520,  q: 0.7, gs: 0.90 };
+      default:        return { type: 'bandpass', freq: 1500, q: 2.0, gs: 1.00 };
+    }
+  },
+
+  _ensureRollVoice(matName) {
+    const existing = this._rollVoices[matName];
+    if (existing) return existing;
+    if (!this.ctx) return null;
+
+    const profile = this._rollProfile(matName);
+    const sr = this.ctx.sampleRate;
+    // Two-second pinkish loop — bias random white toward low freq so the
+    // filter has body to work with on every material.
+    const len = sr * 2;
+    const buf = this.ctx.createBuffer(1, len, sr);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const white = Math.random() * 2 - 1;
+      last = last * 0.62 + white * 0.38;
+      d[i] = last;
+    }
+    const source = this.ctx.createBufferSource();
+    source.buffer = buf; source.loop = true;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = profile.type;
+    filter.frequency.value = profile.freq;
+    if (profile.q !== undefined) filter.Q.value = profile.q;
+    const gain = this.ctx.createGain();
+    gain.gain.value = 0;
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    source.start();
+
+    const voice = { source, filter, gain, profile };
+    this._rollVoices[matName] = voice;
+    return voice;
+  },
+
+  /** Called per rolling ball per physics tick. `intensity` is tangential
+   *  speed (px/s) — it gets summed across all balls of that material. */
+  addRoll(matName, intensity) {
+    this._rollMix[matName] = (this._rollMix[matName] || 0) + intensity;
+  },
+
+  /** After all balls have contributed, apply mix to voice gains with
+   *  smoothing. Materials not contributing this frame fade to silence. */
+  commitRoll() {
+    if (!this.ctx || !PHYS.sound || PHYS.volume <= 0) {
+      // Still clear the mix so the next frame starts clean.
+      this._rollMix = {};
+      return;
+    }
+    const t = this.ctx.currentTime;
+    for (const name in this._rollMix) {
+      const intensity = this._rollMix[name];
+      const voice = this._ensureRollVoice(name);
+      if (!voice) continue;
+      const target = Math.min(0.18, intensity * 0.00035 * voice.profile.gs);
+      voice.gain.gain.setTargetAtTime(target, t, 0.06);
+    }
+    // Fade out any material that didn't contribute this frame.
+    for (const name in this._rollVoices) {
+      if (this._rollMix[name] === undefined) {
+        const voice = this._rollVoices[name];
+        voice.gain.gain.setTargetAtTime(0, t, 0.09);
+      }
+    }
+    this._rollMix = {};
+  },
+
+  /** Short electric crackle — used when plasma balls are close enough to
+   *  arc. Bandpass-filtered noise at high frequencies. */
+  crackle(x = 0, pitch = 1) {
+    if (!this.ctx || !PHYS.sound || PHYS.volume <= 0) return;
+    if (!this._canSpawn()) return;
+    const t = this.ctx.currentTime;
+    const dur = 0.04 + Math.random() * 0.04;
+    const sr = this.ctx.sampleRate;
+    const len = Math.max(32, Math.floor(sr * dur));
+    const buf = this.ctx.createBuffer(1, len, sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 1.2);
+    const src = this.ctx.createBufferSource();
+    src.buffer = buf;
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = (2500 + Math.random() * 2500) * pitch;
+    f.Q.value = 4;
+    const g = this.ctx.createGain();
+    g.gain.value = 0.06 + Math.random() * 0.04;
+    const pan = this.ctx.createStereoPanner();
+    const cw = W.cw || window.innerWidth || 1000;
+    pan.pan.value = clamp((x / cw) * 2 - 1, -0.85, 0.85);
+    src.connect(f); f.connect(g); g.connect(pan); pan.connect(this.master);
+    src.onended = () => this._release();
+    this._claim();
+    src.start(t);
+  }
 };

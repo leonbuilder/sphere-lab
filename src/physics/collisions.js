@@ -192,6 +192,19 @@ export function collideBalls(a, b) {
   a.heat = Math.min(1, a.heat + heatGain);
   b.heat = Math.min(1, b.heat + heatGain);
 
+  // Heat conduction — the hotter body bleeds into the colder one. Scales
+  // with the product of conductivities, so insulator-on-insulator is
+  // almost no transfer, metal-on-metal is fast. A hot steel ball dropped
+  // on an ice ball rapidly warms the ice (and melts it).
+  const ka = a.mat.cond ?? 0.3;
+  const kb = b.mat.cond ?? 0.3;
+  const dh = b.heat - a.heat;
+  if (Math.abs(dh) > 0.01) {
+    const flow = dh * ka * kb * 0.22;
+    a.heat = clamp(a.heat + flow, 0, 1);
+    b.heat = clamp(b.heat - flow, 0, 1);
+  }
+
   wake(a); wake(b);
 
   // per-hit chip emission for materials with probabilistic chip shedding (ice)

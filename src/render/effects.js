@@ -130,6 +130,97 @@ export function drawParticles(tx) {
   tx.globalAlpha = 1;
 }
 
+/**
+ * Plasma-to-plasma electric arcs. Every pair of plasma balls within
+ * `ARC_RANGE` draws a jagged additive bolt between them, intensity
+ * falling off with distance. New jitter per frame so the arcs flicker.
+ */
+const ARC_RANGE = 140;
+export function drawPlasmaArcs(tx) {
+  // collect plasma balls once
+  /** @type {import('../entities/ball.js').Ball[]} */
+  const src = [];
+  for (const b of balls) if (b.mat.name === 'PLASMA') src.push(b);
+  if (src.length < 2) return;
+
+  tx.save();
+  tx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < src.length; i++) {
+    const a = src[i];
+    for (let j = i + 1; j < src.length; j++) {
+      const b = src[j];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > ARC_RANGE * ARC_RANGE) continue;
+      const d = Math.sqrt(d2) || 0.001;
+      const rsum = a.r + b.r;
+      if (d < rsum * 1.05) continue;   // overlapping balls — skip
+      const t = 1 - d / ARC_RANGE;       // 0..1 strength
+
+      // jagged path perpendicular to the A-B axis
+      const nx = -dy / d, ny = dx / d;
+      const ax = a.x + (dx / d) * a.r;
+      const ay = a.y + (dy / d) * a.r;
+      const bx = b.x - (dx / d) * b.r;
+      const by = b.y - (dy / d) * b.r;
+      const len = Math.sqrt((bx - ax) ** 2 + (by - ay) ** 2);
+      const segs = Math.max(4, Math.min(10, Math.floor(len / 14)));
+      const amp = Math.min(18, len * 0.18);
+
+      // outer halo
+      tx.strokeStyle = `rgba(220,160,255,${0.20 * t})`;
+      tx.lineWidth = 6;
+      tx.lineCap = 'round';
+      tx.beginPath();
+      tx.moveTo(ax, ay);
+      const path = [];
+      for (let s = 1; s < segs; s++) {
+        const u = s / segs;
+        const jitter = (Math.random() - 0.5) * amp * (1 - Math.abs(u - 0.5) * 1.6);
+        const px = ax + (bx - ax) * u + nx * jitter;
+        const py = ay + (by - ay) * u + ny * jitter;
+        path.push([px, py]);
+        tx.lineTo(px, py);
+      }
+      tx.lineTo(bx, by);
+      tx.stroke();
+
+      // mid body
+      tx.strokeStyle = `rgba(240,200,255,${0.55 * t})`;
+      tx.lineWidth = 2.2;
+      tx.beginPath();
+      tx.moveTo(ax, ay);
+      for (const [px, py] of path) tx.lineTo(px, py);
+      tx.lineTo(bx, by);
+      tx.stroke();
+
+      // bright core
+      tx.strokeStyle = `rgba(255,255,255,${0.9 * t})`;
+      tx.lineWidth = 0.9;
+      tx.beginPath();
+      tx.moveTo(ax, ay);
+      for (const [px, py] of path) tx.lineTo(px, py);
+      tx.lineTo(bx, by);
+      tx.stroke();
+
+      // occasional branch — a short forked offshoot
+      if (Math.random() < 0.15 * t) {
+        const [bpx, bpy] = path[Math.floor(path.length / 2)] || [ax, ay];
+        const bLen = rsum * (0.6 + Math.random() * 0.8);
+        const ang = Math.atan2(dy, dx) + (Math.random() - 0.5) * Math.PI * 0.9;
+        const ex = bpx + Math.cos(ang) * bLen;
+        const ey = bpy + Math.sin(ang) * bLen;
+        tx.strokeStyle = `rgba(220,180,255,${0.45 * t})`;
+        tx.lineWidth = 1.2;
+        tx.beginPath();
+        tx.moveTo(bpx, bpy); tx.lineTo(ex, ey); tx.stroke();
+      }
+    }
+  }
+  tx.restore();
+  tx.globalAlpha = 1;
+}
+
 export function drawLensFlares(tx) {
   if (!PHYS.flare) return;
   tx.save();

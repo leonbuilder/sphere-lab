@@ -19,6 +19,7 @@ import { clamp, lerp, len, rand, pick } from '../core/math.js';
 import { balls, Ball, wake, SLEEP_DELAY, SLEEP_V, SLEEP_W } from '../entities/ball.js';
 import { MATERIALS, MAT_KEYS } from '../entities/materials.js';
 import { particles, spawnHeatShimmer, spawnSmoke, spawnSparkle, spawnChip } from '../entities/particles.js';
+import { Snd } from '../audio/sound.js';
 import { collideBalls, collideWall, collidePeg } from './collisions.js';
 import { updateFlippers, collideFlipper } from './flippers.js';
 import { applyVortex, applySolar, applyBuoyancy, applyMagnetism, stepRipples } from './forces.js';
@@ -256,6 +257,41 @@ export function physicsStep(dt) {
     } else {
       b.restTime = 0;
       b.sleeping = false;
+    }
+  }
+
+  // Rolling / sliding sound contribution. Each ball in contact with a
+  // surface AND moving tangentially adds its tangential speed to its
+  // material's mix bus. The audio layer smooths this into continuous
+  // voice gain, so rubber squeaks while rolling and ice hisses while
+  // sliding — the silence that used to exist below the impact gate.
+  for (const b of balls) {
+    if (b.sleeping || b.groundT <= 0) continue;
+    const nx = b.contactNx, ny = b.contactNy;
+    const vn = b.vx * nx + b.vy * ny;
+    const vtx = b.vx - vn * nx;
+    const vty = b.vy - vn * ny;
+    const vt = Math.sqrt(vtx * vtx + vty * vty);
+    if (vt > 12) Snd.addRoll(b.mat.name, vt);
+  }
+  Snd.commitRoll();
+
+  // Plasma arcs — a subtle electric crackle whenever two plasmas are
+  // within arc range. Rate-limited by the sound layer's voice budget.
+  for (let i = 0; i < balls.length; i++) {
+    const a = balls[i];
+    if (a.mat.name !== 'PLASMA') continue;
+    for (let j = i + 1; j < balls.length; j++) {
+      const c = balls[j];
+      if (c.mat.name !== 'PLASMA') continue;
+      const dx = c.x - a.x, dy = c.y - a.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > 140 * 140) continue;
+      // Probability rises as they get closer.
+      const t = 1 - Math.sqrt(d2) / 140;
+      if (Math.random() < dt * 14 * t * t) {
+        Snd.crackle((a.x + c.x) * 0.5, 0.85 + Math.random() * 0.4);
+      }
     }
   }
 
