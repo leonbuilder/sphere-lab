@@ -223,8 +223,12 @@ function drawRefraction(tx, b) {
   tx.beginPath(); tx.arc(b.x, b.y, b.r * 0.96, 0, TAU); tx.clip();
 
   const base = 1 - b.mat.refract * 0.25;
-  // R/G/B at subtly different scales → chromatic aberration
-  const scales = [ base + 0.020, base, base - 0.020 ];
+  // R/G/B at slightly different scales → chromatic aberration. Diamond
+  // has much stronger dispersion than glass (that's the literal "fire"),
+  // so its spread is nearly 3× wider — the rainbow fringe at the edges
+  // reads as a real prism, not just a refractive bubble.
+  const spread = b.mat.name === 'DIAMOND' ? 0.055 : 0.020;
+  const scales = [ base + spread, base, base - spread ];
   const filters = ['red', 'green', 'blue'];
 
   for (let i = 0; i < 3; i++) {

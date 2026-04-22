@@ -39,18 +39,28 @@ const CRACK_VN_THRESHOLD = 80;
  * battered glass ball can shatter on a hit that wouldn't have touched it
  * fresh. Cracks are stored in ball-local angle space so they rotate.
  *
+ * If `hitterMat` is diamond, damage is dramatically amplified — diamond
+ * is the hardest natural material and genuinely scores / cracks softer
+ * materials on contact.
+ *
  * @param {import('../entities/ball.js').Ball} ball
  * @param {number} worldAngle — angle from ball center to impact point
  * @param {number} vn         — impact normal velocity (px/s)
+ * @param {import('../entities/materials.js').Material} [hitterMat]
  */
-function addCrack(ball, worldAngle, vn) {
+function addCrack(ball, worldAngle, vn, hitterMat) {
   if (!ball.mat.fragile || ball.isFragment) return;
-  if (vn < CRACK_VN_THRESHOLD) return;
-  // Damage grows with (vn - threshold) so soft hits barely mark, hard hits leave deep scars.
-  const impact = (vn - CRACK_VN_THRESHOLD) / 400;
+  const diamondHit = hitterMat && hitterMat.name === 'DIAMOND';
+  // Diamond cracks glass / ice on much softer contact — lower threshold,
+  // steeper damage curve, guaranteed visible crack.
+  const localThresh = diamondHit ? 25 : CRACK_VN_THRESHOLD;
+  if (vn < localThresh) return;
+  let impact = (vn - localThresh) / 400;
+  if (diamondHit) impact *= 2.4;
   ball.damage = clamp(ball.damage + impact * 0.25, 0, 1);
-  // Only draw a new crack every so often — avoid cluttering the ball.
-  if (Math.random() > 0.35 + impact * 0.5) return;
+  // Only draw a new crack every so often — avoid cluttering. Diamond hits
+  // always leave a visible mark.
+  if (!diamondHit && Math.random() > 0.35 + impact * 0.5) return;
   if (!ball.cracks) ball.cracks = [];
   if (ball.cracks.length >= MAX_CRACKS) ball.cracks.shift();
   ball.cracks.push({
@@ -276,7 +286,7 @@ export function collideBalls(a, b) {
       // The impact on `a` comes from the direction of `b` → contact point on
       // a is at (nx, ny) side. That's where the dent / crack sits.
       addDent(a, Math.atan2(ny, nx), mag);
-      addCrack(a, Math.atan2(ny, nx), Math.abs(vn));
+      addCrack(a, Math.atan2(ny, nx), Math.abs(vn), b.mat);
     }
     if (!bFractured) {
       spawnImpactFor(b.mat, hx, hy, -nx, -ny, mag);
@@ -284,7 +294,7 @@ export function collideBalls(a, b) {
       b.squash = 1 - Math.min(0.35 * dB, mag * 0.0025 * dB);
       b.squashAng = Math.atan2(-ny, -nx);
       addDent(b, Math.atan2(-ny, -nx), mag);
-      addCrack(b, Math.atan2(-ny, -nx), Math.abs(vn));
+      addCrack(b, Math.atan2(-ny, -nx), Math.abs(vn), a.mat);
     }
     if (!aFractured && !bFractured) Snd.collision(a, b, mag, Math.abs(vn));
   }

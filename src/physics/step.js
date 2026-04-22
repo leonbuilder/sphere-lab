@@ -177,6 +177,34 @@ export function physicsStep(dt) {
       }
     }
 
+    // Diamond dispersion trail — a moving diamond continuously sheds tiny
+    // rainbow glints in its wake, the visual signature of its characteristic
+    // "fire" (spectral dispersion). Glass refracts; diamond *prisms*.
+    if (mat.name === 'DIAMOND' && !b.isFragment) {
+      const dspd = len(b.vx, b.vy);
+      if (dspd > 50) {
+        const intensity = Math.min(1, dspd / 450);
+        if (Math.random() < dt * (32 + intensity * 60)) {
+          const hues = [
+            'rgba(255,180,230,0.75)', 'rgba(180,220,255,0.75)',
+            'rgba(200,255,200,0.65)', 'rgba(255,235,160,0.70)',
+            'rgba(220,190,255,0.75)', 'rgba(255,255,255,0.85)'
+          ];
+          particles.push({
+            x: b.x + rand(-b.r * 0.4, b.r * 0.4),
+            y: b.y + rand(-b.r * 0.4, b.r * 0.4),
+            vx: b.vx * 0.08 + rand(-22, 22),
+            vy: b.vy * 0.08 + rand(-22, 22),
+            life: 0.45 + Math.random() * 0.25,
+            maxLife: 0.70,
+            color: hues[Math.floor(Math.random() * hues.length)],
+            size: 1.0 + Math.random() * 1.4,
+            type: 'sparkle'
+          });
+        }
+      }
+    }
+
     // Hot-ball cooling trail — a short fading heat smear behind any moving
     // hot ball. Reuses the smoke particle type with hot colors so there's
     // no new particle branch. Only spawns above a speed threshold so
