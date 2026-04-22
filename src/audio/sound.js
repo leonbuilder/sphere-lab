@@ -52,6 +52,29 @@ import { clamp } from '../core/math.js';
  *  for a ball of this radius. Smaller balls shift up; larger shift down. */
 const REF_R = 20;
 
+/* ------------------------------------------------------------------ */
+/*  Voice budget + trigger gating                                      */
+/* ------------------------------------------------------------------ */
+/* The sandbox can easily fire 50+ simultaneous collisions (pile-ups,
+ * cascade shatters). Without limits this either overloads the audio
+ * graph (causing audible dropouts) or the compressor pumps everything
+ * down to a mush. So we cap concurrent voices, rate-limit spawns in a
+ * short window, and gate retriggers on the same ball.                 */
+
+/** Hard ceiling on simultaneously-playing oscillator / buffer voices. */
+const MAX_ACTIVE_VOICES = 56;
+/** Per-frame spawn limit — avoids a single tick creating 100+ nodes. */
+const SPAWN_WINDOW_MS = 16;
+const MAX_SPAWNS_PER_WINDOW = 28;
+/** Minimum gap between consecutive material voices for a single ball
+ *  (seconds). A heavy ball settling on the floor 'collides' every 4 ms
+ *  at 240 Hz physics — this stops that from becoming 240 clicks/sec. */
+const PER_BALL_COOLDOWN = 0.045;
+/** Normal-velocity thresholds below which the impact is treated as a
+ *  rolling / sliding contact, not a real hit. Sounds are skipped.     */
+const MIN_AUDIBLE_VN_BALL = 14;
+const MIN_AUDIBLE_VN_WALL = 18;
+
 /**
  * @typedef {Object} Mode
  * @property {number} ratio   multiplier against the material's baseFreq
@@ -219,6 +242,11 @@ export const Snd = {
   /** @type {AudioNode | null} */     wetBus: null,
   enabled: true,
 
+  /** Live count of oscillator / buffer voices currently playing. */
+  _activeVoices: 0,
+  /** performance.now() timestamps of recent spawns, pruned to the window. */
+  _spawnTimes: [],
+
   init() {
     if (this.ctx) return;
     try {
@@ -227,14 +255,15 @@ export const Snd = {
       this.master = this.ctx.createGain();
       this.master.gain.value = PHYS.volume;
 
-      // Gentle master compressor — cascaded shatters + dense collisions would
-      // otherwise clip.
+      // Master limiter — hard-ish ceiling so dense bursts can't clip or
+      // pump the whole mix down. Fast attack, moderate release so
+      // individual impacts still punch through.
       const comp = this.ctx.createDynamicsCompressor();
-      comp.threshold.value = -14;
-      comp.knee.value = 8;
-      comp.ratio.value = 4;
-      comp.attack.value = 0.004;
-      comp.release.value = 0.14;
+      comp.threshold.value = -10;
+      comp.knee.value = 6;
+      comp.ratio.value = 6;
+      comp.attack.value = 0.002;
+      comp.release.value = 0.09;
       this.master.connect(comp);
       comp.connect(this.ctx.destination);
 
@@ -259,12 +288,34 @@ export const Snd = {
 
   applyVolume() { if (this.master) this.master.gain.value = PHYS.volume; },
 
+  /** Returns true if the budget has room for another voice right now. */
+  _canSpawn() {
+    const now = performance.now();
+    const w = this._spawnTimes;
+    while (w.length && now - w[0] > SPAWN_WINDOW_MS) w.shift();
+    if (w.length >= MAX_SPAWNS_PER_WINDOW) return false;
+    if (this._activeVoices >= MAX_ACTIVE_VOICES) return false;
+    return true;
+  },
+
+  /** Register a new voice start — call right before `node.start()`. */
+  _claim() {
+    this._activeVoices++;
+    this._spawnTimes.push(performance.now());
+  },
+
+  /** Decrement when a voice ends. Wired via `node.onended`. */
+  _release() {
+    if (this._activeVoices > 0) this._activeVoices--;
+  },
+
   /* ------------------------------------------------------------------ */
   /*  Primitives                                                         */
   /* ------------------------------------------------------------------ */
 
   bonk(freq, vol, dur, timbre) {
     if (!this.ctx || !PHYS.sound || PHYS.volume <= 0) return;
+    if (!this._canSpawn()) return;
     const t = this.ctx.currentTime;
     const o = this.ctx.createOscillator();
     const g = this.ctx.createGain();
@@ -276,11 +327,14 @@ export const Snd = {
     o.connect(g);
     g.connect(this.master);
     if (this.wetBus) g.connect(this.wetBus);
+    o.onended = () => this._release();
+    this._claim();
     o.start(t); o.stop(t + dur);
   },
 
   noise(dur, vol, cutoff) {
     if (!this.ctx || !PHYS.sound || PHYS.volume <= 0) return;
+    if (!this._canSpawn()) return;
     const t = this.ctx.currentTime;
     const buf = this.ctx.createBuffer(1, this.ctx.sampleRate * dur, this.ctx.sampleRate);
     const d = buf.getChannelData(0);
@@ -289,12 +343,15 @@ export const Snd = {
     const f = this.ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
     const g = this.ctx.createGain(); g.gain.value = vol;
     src.connect(f); f.connect(g); g.connect(this.master);
+    src.onended = () => this._release();
+    this._claim();
     src.start(t);
   },
 
   /** Internal — short filtered noise burst for an attack transient. */
   _attack(atk, gain, destination) {
     if (!this.ctx || gain <= 0) return;
+    if (!this._canSpawn()) return;
     const t = this.ctx.currentTime;
     const len = Math.max(32, Math.floor(this.ctx.sampleRate * atk.dur));
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -311,6 +368,8 @@ export const Snd = {
     const g = this.ctx.createGain();
     g.gain.value = gain * atk.amp;
     src.connect(f); f.connect(g); g.connect(destination);
+    src.onended = () => this._release();
+    this._claim();
     src.start(t);
   },
 
@@ -333,6 +392,13 @@ export const Snd = {
     if (strength <= 0.005) return;
 
     const t = this.ctx.currentTime;
+
+    // Per-ball retrigger cooldown. A ball in continuous contact with a
+    // wall or another ball re-enters `collideX` every physics tick; we
+    // only want a new voice every ~45 ms so rolling / sliding doesn't
+    // turn into a buzzsaw.
+    if (ball._sndT !== undefined && t - ball._sndT < PER_BALL_COOLDOWN) return;
+    ball._sndT = t;
 
     // Stereo panner — position in the world maps to L/R in the mix.
     const cw = W.cw || window.innerWidth || 1000;
@@ -367,6 +433,11 @@ export const Snd = {
       // Guard against silly-high frequencies on very small balls
       if (freq > 18000 || freq < 30) continue;
 
+      // Voice budget — if the graph is saturated, drop the mode rather
+      // than pile on. The fundamental mode (i=0) is the most important
+      // so it goes first and the least important modes drop first.
+      if (!this._canSpawn()) break;
+
       const detune = 1 + (Math.random() - 0.5) * 0.015;
 
       const o = this.ctx.createOscillator();
@@ -389,6 +460,8 @@ export const Snd = {
         send.connect(this.wetBus);
       }
 
+      o.onended = () => this._release();
+      this._claim();
       o.start(t);
       o.stop(t + m.decay + 0.05);
     }
@@ -400,9 +473,12 @@ export const Snd = {
 
   /**
    * Ball-on-ball collision. Each participant rings in its own location,
-   * damped by the other's softness.
+   * damped by the other's softness. `vn` is the pre-impact relative
+   * normal speed; below ~14 px/s the contact is sliding / resting, not
+   * a real impact, and we stay silent.
    */
-  collision(a, b, magnitude) {
+  collision(a, b, magnitude, vn = Infinity) {
+    if (vn < MIN_AUDIBLE_VN_BALL) return;
     const strength = clamp(magnitude * 0.003, 0.04, 0.9);
     const softA = a.mat.deform ?? 0.2;
     const softB = b.mat.deform ?? 0.2;
@@ -410,8 +486,10 @@ export const Snd = {
     this.emitMaterialSound(b, strength, softA);
   },
 
-  /** Ball-on-wall / ball-on-peg — walls count as hard infrastructure. */
-  wall(ball, magnitude) {
+  /** Ball-on-wall / ball-on-peg — walls count as hard infrastructure.
+   *  Same sliding-contact gate as `collision`.                        */
+  wall(ball, magnitude, vn = Infinity) {
+    if (vn < MIN_AUDIBLE_VN_WALL) return;
     const strength = clamp(magnitude * 0.0025, 0.035, 0.7);
     this.emitMaterialSound(ball, strength, 0.15);
   },
@@ -419,6 +497,9 @@ export const Snd = {
   /** Fragile material shatter — play at full strength + add bright shards. */
   shatter(ball) {
     if (!this.ctx || !PHYS.sound || PHYS.volume <= 0) return;
+    // Shatters are special events — bypass the per-ball cooldown so the
+    // voice fires even if the ball just emitted a regular collision.
+    ball._sndT = undefined;
     this.emitMaterialSound(ball, 0.95, 0);
     if (ball.mat.name === 'ICE') {
       this.bonk(1800, 0.22, 0.06, 'sine');

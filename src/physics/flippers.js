@@ -86,8 +86,13 @@ export function collideFlipper(b, f) {
   wake(b);
 
   spawnImpact(cx, cy, nx, ny, Math.abs(vn) * b.mass, '#ffb340');
-  // ball-on-flipper: the ball's own material voice + a small flipper-whack
-  Snd.wall(b, Math.abs(vn) * b.mass);
-  Snd.bonk(520 + Math.abs(f.angVel) * 18, 0.12, 0.06, 'square');
+  // ball-on-flipper: the ball's own material voice + a small flipper-whack.
+  // Only whack on real hits — a ball resting on a raised flipper re-enters
+  // collideFlipper every tick, which must not click continuously.
+  const aVn = Math.abs(vn);
+  Snd.wall(b, aVn * b.mass, aVn);
+  if (aVn > 55) {
+    Snd.bonk(520 + Math.abs(f.angVel) * 18, 0.12, 0.06, 'square');
+  }
   stats.collisions++;
 }
