@@ -16,13 +16,20 @@ export class Spring {
    * @param {number} rest       — equilibrium length (px)
    * @param {number} stiffness  — spring constant, 0..~2 (higher = stiffer)
    * @param {number} damp       — axial velocity damping
+   * @param {number} [offA]     — optional ball-local attachment angle on a.
+   *                               Undefined = attach to center (old behavior,
+   *                               used by every scene builder). Set by the
+   *                               Link tool to fan reinforced links visually.
+   * @param {number} [offB]     — same for b.
    */
-  constructor(a, b, rest, stiffness = 0.35, damp = 0.05) {
+  constructor(a, b, rest, stiffness = 0.35, damp = 0.05, offA, offB) {
     this.a = a;
     this.b = b;
     this.rest = rest;
     this.k = stiffness;
     this.damp = damp;
+    this.offA = offA;
+    this.offB = offB;
   }
 
   solve(dt) {

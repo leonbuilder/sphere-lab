@@ -126,9 +126,26 @@ export function drawSprings(tx) {
     tx.strokeStyle = col;
     tx.globalAlpha = 0.55;
     tx.lineWidth = clamp(1.5 - Math.abs(stretch) * 0.5, 0.4, 2);
+
+    // Endpoints: center-to-center for scene-built springs (no offset set),
+    // surface-to-surface at an offset angle for reinforced Link-tool
+    // springs. The offset rotates with the ball because it's stored in
+    // ball-local frame — reinforced links keep their fan pattern.
+    let ax = s.a.x, ay = s.a.y, bx = s.b.x, by = s.b.y;
+    if (s.offA !== undefined) {
+      const aa = s.a.angle + s.offA;
+      ax = s.a.x + Math.cos(aa) * s.a.r;
+      ay = s.a.y + Math.sin(aa) * s.a.r;
+    }
+    if (s.offB !== undefined) {
+      const ab = s.b.angle + s.offB;
+      bx = s.b.x + Math.cos(ab) * s.b.r;
+      by = s.b.y + Math.sin(ab) * s.b.r;
+    }
+
     tx.beginPath();
-    tx.moveTo(s.a.x, s.a.y);
-    tx.lineTo(s.b.x, s.b.y);
+    tx.moveTo(ax, ay);
+    tx.lineTo(bx, by);
     tx.stroke();
   }
   tx.globalAlpha = 1;

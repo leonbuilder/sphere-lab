@@ -68,8 +68,26 @@ canvas.addEventListener('mousedown', e => {
     const b = ballAt(mouse.wx, mouse.wy);
     if (b) {
       if (mouse.linkFirst && mouse.linkFirst !== b) {
-        const d = Math.hypot(mouse.linkFirst.x - b.x, mouse.linkFirst.y - b.y);
-        const s = new Spring(mouse.linkFirst, b, d, 0.6, 0.1);
+        const a = mouse.linkFirst;
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        // Count existing springs between this pair — each re-link adds
+        // a reinforced strand that attaches at a slightly offset point
+        // on both balls so the multiple lines fan out visually.
+        let existing = 0;
+        for (const sp of W.springs) {
+          if ((sp.a === a && sp.b === b) || (sp.a === b && sp.b === a)) existing++;
+        }
+        // Base attachment angle: each ball faces its partner. Compute in
+        // ball-local frame so the attachment rotates with the ball.
+        const baseA = Math.atan2(b.y - a.y, b.x - a.x) - a.angle;
+        const baseB = Math.atan2(a.y - b.y, a.x - b.x) - b.angle;
+        // Fan offset: 0, +δ, -δ, +2δ, -2δ, ... (δ ≈ 0.22 rad ≈ 12.6°).
+        const k = (existing + 1) >> 1;
+        const fan = (existing === 0) ? 0
+                  : (existing % 2 === 1 ? k : -k) * 0.22;
+        const offA = baseA + fan;
+        const offB = baseB - fan;   // opposite sign keeps strands roughly parallel
+        const s = new Spring(a, b, d, 0.6, 0.1, offA, offB);
         W.springs.push(s);
         Snd.spring();
         pushUndo(() => {

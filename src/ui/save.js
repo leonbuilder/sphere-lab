@@ -12,6 +12,7 @@
 
 import { W } from '../core/world.js';
 import { balls, Ball } from '../entities/ball.js';
+import { Spring } from '../entities/spring.js';
 import { MATERIALS } from '../entities/materials.js';
 import { loadScene } from '../scenes/index.js';
 import { canvas } from '../render/canvas.js';
@@ -19,18 +20,44 @@ import { canvas } from '../render/canvas.js';
 const KEY = 'sphere-lab:snapshot';
 
 export function saveState() {
+  // Skip in-flight fragments (their lifespan field would survive but they'd
+  // never cull cleanly after load, leaving ghost fragments stuck in
+  // mid-shatter state).
+  const savedBalls = balls.filter(b => !b.isFragment);
+  const ballIdx = new Map();
+  savedBalls.forEach((b, i) => ballIdx.set(b, i));
+
+  // Springs reference balls by index into the saved-balls array. Any
+  // spring whose endpoint was filtered out (fragment, or a scene-built
+  // ball that's no longer present for some reason) is dropped.
+  const savedSprings = W.springs
+    .filter(s => ballIdx.has(s.a) && ballIdx.has(s.b))
+    .map(s => ({
+      a: ballIdx.get(s.a),
+      b: ballIdx.get(s.b),
+      rest: s.rest, k: s.k, damp: s.damp,
+      offA: s.offA, offB: s.offB
+    }));
+
+  // World-anchored constraints (cradle-style). Same index pattern.
+  const savedConstraints = W.constraints
+    .filter(c => ballIdx.has(c.a))
+    .map(c => ({
+      ball: ballIdx.get(c.a),
+      ax: c.ax, ay: c.ay, len: c.len
+    }));
+
   const payload = {
     scene: W.scene,
-    // Skip in-flight fragments — if we saved them their lifespan field
-    // would survive but they'd never cull cleanly after load, leaving
-    // ghost fragments stuck in mid-shatter state. Just drop them.
-    balls: balls.filter(b => !b.isFragment).map(b => ({
+    balls: savedBalls.map(b => ({
       x: b.x, y: b.y, vx: b.vx, vy: b.vy,
       r: b.r, mat: matKeyOf(b.mat),
       pinned: b.pinned, heat: b.heat,
       angle: b.angle, omega: b.omega,
       polarity: b.polarity
-    }))
+    })),
+    springs: savedSprings,
+    constraints: savedConstraints
   };
   try {
     localStorage.setItem(KEY, JSON.stringify(payload));
@@ -52,8 +79,11 @@ export function loadState() {
     balls.length = 0;
     W.springs.length = 0;
     W.constraints.length = 0;
+
+    // Build balls first, keeping a local array so we can map saved
+    // spring / constraint indices back to the new Ball instances.
+    const restored = [];
     for (const s of payload.balls || []) {
-      // Guard against corrupted or prototype-poisoned keys
       const mat = (Object.prototype.hasOwnProperty.call(MATERIALS, s.mat) && MATERIALS[s.mat]) || MATERIALS.rubber;
       const b = new Ball(s.x, s.y, s.r, mat);
       b.vx = s.vx; b.vy = s.vy;
@@ -63,7 +93,25 @@ export function loadState() {
       b.omega = s.omega || 0;
       if (typeof s.polarity === 'number') b.polarity = s.polarity;
       balls.push(b);
+      restored.push(b);
     }
+
+    // Rebuild springs from saved indices. Skip any with out-of-range refs.
+    for (const sp of payload.springs || []) {
+      const a = restored[sp.a];
+      const b = restored[sp.b];
+      if (!a || !b) continue;
+      const spring = new Spring(a, b, sp.rest, sp.k, sp.damp, sp.offA, sp.offB);
+      W.springs.push(spring);
+    }
+
+    // Rebuild world-anchor constraints.
+    for (const c of payload.constraints || []) {
+      const a = restored[c.ball];
+      if (!a) continue;
+      W.constraints.push({ a, ax: c.ax, ay: c.ay, len: c.len });
+    }
+
     flashButton('btn-load', 'Restored');
   } catch {
     flashButton('btn-load', 'Failed');
