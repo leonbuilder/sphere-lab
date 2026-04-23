@@ -814,8 +814,11 @@ html[data-theme="forest"] {
   transition: opacity 0.35s var(--ease);
 }
 .scene-title.show {
-  opacity: 1;
-  animation: scene-pulse 2s var(--ease);
+  /* animation-fill-mode: forwards retains the animation's final frame
+     (opacity: 0) so the title actually disappears. Without it the base
+     transition would fade the title *back* to opacity: 1 after the
+     animation ended, leaving the text permanently on screen. */
+  animation: scene-pulse 2s var(--ease) forwards;
 }
 
 .scene-title .st-title {
