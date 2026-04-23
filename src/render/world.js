@@ -9,6 +9,7 @@ import { PHYS } from '../core/config.js';
 import { TAU, clamp } from '../core/math.js';
 import { mix } from '../core/color.js';
 import { balls } from '../entities/ball.js';
+import { isBallOnScreen } from './ball.js';
 
 export function drawWalls(tx) {
   tx.shadowColor = '#8fd0ff'; tx.shadowBlur = 4;
@@ -252,6 +253,9 @@ export function drawBallShadows(tx) {
   for (const b of balls) {
     const dist = floorY - (b.y + b.r);
     if (dist < 0 || dist > 300) continue;
+    // Viewport cull — shadows sit at the floor, so check horizontally
+    // against the camera view. Saves the 3-layer ellipse stack per ball.
+    if (!isBallOnScreen(b)) continue;
     // distance-based: the higher the ball, the wider + fainter the shadow
     const t = dist / 300;
     const spread = 1 + t * 1.6;

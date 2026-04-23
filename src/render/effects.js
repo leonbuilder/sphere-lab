@@ -14,6 +14,7 @@ import { TAU, clamp, lerp } from '../core/math.js';
 import { withAlpha } from '../core/color.js';
 import { balls } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
+import { isBallOnScreen } from './ball.js';
 
 /**
  * Screen-space contact shadow. Darkens the narrow region between two close
@@ -26,8 +27,13 @@ export function drawAO(tx) {
   tx.globalCompositeOperation = 'multiply';
   for (let i = 0; i < balls.length; i++) {
     const a = balls[i];
+    // If `a` is entirely off-screen, every pair it's in is too — skip
+    // the whole inner loop. This turns the nominal O(n²) into something
+    // closer to O(visible²) which is much smaller when zoomed in.
+    if (!isBallOnScreen(a, 80)) continue;
     for (let j = i + 1; j < balls.length; j++) {
       const b = balls[j];
+      if (!isBallOnScreen(b, 80)) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d2 = dx * dx + dy * dy;
       const rsum = a.r + b.r;
@@ -175,7 +181,9 @@ export function drawParticles(tx) {
  */
 const ARC_RANGE = 140;
 export function drawPlasmaArcs(tx) {
-  // collect plasma balls once
+  // collect plasma balls once. Off-screen plasma balls can still be in
+  // a visible arc-pair if their partner is on-screen, so we only cull
+  // when BOTH ends of a pair are off-screen (done in the inner loop).
   /** @type {import('../entities/ball.js').Ball[]} */
   const src = [];
   for (const b of balls) if (b.mat.name === 'PLASMA') src.push(b);
@@ -185,8 +193,12 @@ export function drawPlasmaArcs(tx) {
   tx.globalCompositeOperation = 'lighter';
   for (let i = 0; i < src.length; i++) {
     const a = src[i];
+    const aOn = isBallOnScreen(a, ARC_RANGE);
     for (let j = i + 1; j < src.length; j++) {
       const b = src[j];
+      // Skip pair only if both are off-screen (an arc can span into view
+      // from an off-screen source).
+      if (!aOn && !isBallOnScreen(b, ARC_RANGE)) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d2 = dx * dx + dy * dy;
       if (d2 > ARC_RANGE * ARC_RANGE) continue;
@@ -266,7 +278,11 @@ export function drawLensFlares(tx) {
   const sources = [];
   for (const b of balls) {
     const glow = Math.max(b.mat.glow || 0, b.heat * 0.9);
-    if (glow > 0.6) sources.push({ x: b.x, y: b.y, r: b.r, color: b.effectiveColor(), strength: glow });
+    if (glow <= 0.6) continue;
+    // Flares project outward past the ball's footprint, so a generous
+    // margin — otherwise we'd pop rays as a glowing ball exits the view.
+    if (!isBallOnScreen(b, b.r * 4)) continue;
+    sources.push({ x: b.x, y: b.y, r: b.r, color: b.effectiveColor(), strength: glow });
   }
   if (W.solar) sources.push({ x: W.cw / 2, y: W.ch / 2, r: 60, color: '#ffdc80', strength: 1.4 });
 

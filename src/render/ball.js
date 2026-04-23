@@ -18,11 +18,31 @@
  *     ground reflection for polished metals.
  */
 
-import { W } from '../core/world.js';
+import { W, cam } from '../core/world.js';
 import { PHYS } from '../core/config.js';
 import { TAU, len } from '../core/math.js';
 import { mix, lighten, darken, withAlpha } from '../core/color.js';
 import { light, sceneCanvas } from './canvas.js';
+
+/**
+ * Viewport-cull helper. Returns true if a ball's bounding box (plus a
+ * small margin for trails / shadows that extend slightly past it) has
+ * any chance of being on screen under the current camera transform.
+ *
+ * We only call this against the main camera viewport. Post-FX passes
+ * still run full-screen — this just saves per-ball work (gradients,
+ * pattern transforms, path ops) when the ball is clearly off-screen.
+ */
+export function isBallOnScreen(b, margin = 60) {
+  const halfW = W.cw / (2 * cam.zoom);
+  const halfH = W.ch / (2 * cam.zoom);
+  const m = b.r + margin;
+  if (b.x + m < cam.x - halfW) return false;
+  if (b.x - m > cam.x + halfW) return false;
+  if (b.y + m < cam.y - halfH) return false;
+  if (b.y - m > cam.y + halfH) return false;
+  return true;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Material surface micro-textures                                    */
@@ -34,7 +54,23 @@ import { light, sceneCanvas } from './canvas.js';
  * alpha — preserves the radial gradient shading and highlights under
  * it while adding per-material surface character.                     */
 const _texCache = {};
+/** CanvasPattern per material — created once per material, reused every
+ *  frame. Building a pattern isn't free; before this cache, each ball
+ *  (up to 260) was calling createPattern per frame → 15k+ allocations/sec.
+ *  The pattern's transform is swapped per-ball via a shared DOMMatrix. */
+const _patCache = {};
+/** Shared DOMMatrix for pattern rotation. Filled in-place each call —
+ *  no per-ball allocation. */
+let _patternMatrix = null;
 const TEX_SIZE = 96;
+
+function getMatPattern(tx, matName) {
+  if (_patCache[matName] !== undefined) return _patCache[matName];
+  const tex = getMatTexture(matName);
+  if (!tex) { _patCache[matName] = null; return null; }
+  _patCache[matName] = tx.createPattern(tex, 'repeat');
+  return _patCache[matName];
+}
 function getMatTexture(matName) {
   const cached = _texCache[matName];
   if (cached !== undefined) return cached;
@@ -533,6 +569,10 @@ function drawFresnelRim(tx, b) {
 }
 
 export function drawBall(tx, b) {
+  // Viewport cull — skip the entire ball render if clearly off-screen.
+  // Saves gradient building, texture pattern transforms, path ops, and
+  // per-material extras (cracks, dents, diamond sparks, etc.).
+  if (!isBallOnScreen(b)) return;
   const { x, y, r, mat } = b;
   const squashAmt = b.squash;
 
@@ -791,14 +831,25 @@ export function drawBall(tx, b) {
   // flecks for bowling, glitter for gold, and so on. Pattern is rotated
   // with the ball via setTransform so it reads as "baked into" the ball,
   // not drifting over it. Overlay blend preserves highlights under it.
-  const tex = getMatTexture(mat.name);
-  if (tex) {
-    const pat = tx.createPattern(tex, 'repeat');
-    if (pat && pat.setTransform) {
-      const m = new DOMMatrix()
-        .translateSelf(x, y)
-        .rotateSelf(b.angle * 57.29578);
-      pat.setTransform(m);
+  const pat = getMatPattern(tx, mat.name);
+  if (pat) {
+    if (pat.setTransform) {
+      // Reuse a single DOMMatrix across all balls — mutating its fields
+      // directly is ~free, whereas `new DOMMatrix()` per ball allocates
+      // at 260 × 60 ≈ 15.6k/sec.
+      if (!_patternMatrix && typeof DOMMatrix !== 'undefined') {
+        _patternMatrix = new DOMMatrix();
+      }
+      if (_patternMatrix) {
+        const c = Math.cos(b.angle), s = Math.sin(b.angle);
+        _patternMatrix.a = c;
+        _patternMatrix.b = s;
+        _patternMatrix.c = -s;
+        _patternMatrix.d = c;
+        _patternMatrix.e = x;
+        _patternMatrix.f = y;
+        pat.setTransform(_patternMatrix);
+      }
     }
     tx.save();
     tx.globalAlpha = 0.55;
@@ -1043,6 +1094,9 @@ export function drawBall(tx, b) {
 
 export function drawTrail(tx, b) {
   if (!b.trail || b.trail.length < 2) return;
+  // Trails extend from the ball's recent positions — give generous margin
+  // so a just-exited ball's trail tail still renders for a frame or two.
+  if (!isBallOnScreen(b, 200)) return;
   tx.strokeStyle = withAlpha(b.mat.color, 0.33);
   tx.lineWidth = 2; tx.lineCap = 'round';
   tx.beginPath();
