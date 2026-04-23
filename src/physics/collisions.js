@@ -19,7 +19,7 @@ import {
   spawnImpact, spawnSparkle, spawnChip, spawnDust, spawnSmoke
 } from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
-import { velRestScale, matVelRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from './materialMods.js';
+import { matVelRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from './materialMods.js';
 import { stats } from './stats.js';
 import { wake, balls, Ball } from '../entities/ball.js';
 import { tryFracture } from './fracture.js';
