@@ -89,7 +89,7 @@
     <div class="section">
       <div class="section-header">Tool</div>
       <div class="tool-grid" id="tool-row">
-        <button class="tool active" data-tool="spawn"   data-tip="Spawn · Q — click to create, drag to slingshot"><svg><use href="#ic-spawn"/></svg><span class="tool-label">Spawn</span></button>
+        <button class="tool active" data-tool="spawn"   data-tip="Spawn · Q — click to create, drag to slingshot, Shift+hold to paint rapidly"><svg><use href="#ic-spawn"/></svg><span class="tool-label">Spawn</span></button>
         <button class="tool"        data-tool="grab"    data-tip="Grab · W — pick up + fling"><svg><use href="#ic-grab"/></svg><span class="tool-label">Grab</span></button>
         <button class="tool"        data-tool="draw"    data-tip="Draw · E — draw static walls"><svg><use href="#ic-draw"/></svg><span class="tool-label">Draw</span></button>
         <button class="tool"        data-tool="erase"   data-tip="Erase · R — remove at cursor"><svg><use href="#ic-erase"/></svg><span class="tool-label">Erase</span></button>
@@ -245,11 +245,11 @@
 
     <h4>Tools</h4>
     <div class="help-grid">
-      <span class="kbd">Spawn</span>   <span>Click to create a ball. Drag to slingshot. Shift-click for a burst of 10.</span>
+      <span class="kbd">Spawn</span>   <span>Click to create a ball. Drag to slingshot. Shift-click for a burst of 10. <b>Shift+hold (optionally while moving) to paint-spawn balls continuously.</b></span>
       <span class="kbd">Grab</span>    <span>Pick up and fling balls. Velocity = how fast you dragged.</span>
       <span class="kbd">Draw</span>    <span>Click-drag to draw a static wall segment.</span>
       <span class="kbd">Erase</span>   <span>Remove balls, walls, or links near the cursor.</span>
-      <span class="kbd">Link</span>    <span>Click two balls to connect them with a spring. Re-link same pair for reinforced strands. <b>Drag through many balls to chain-link them all in one stroke.</b> <b>Ctrl+click a ball to auto-mesh — link it to every nearby ball in one click (drag outward to grow the radius).</b> Shift+click target to keep source selected for rapid spoke-linking.</span>
+      <span class="kbd">Link</span>    <span>Click two balls to connect them with a spring. Re-link same pair for reinforced strands. <b>Drag through many balls to chain-link them all in one stroke.</b> <b>Ctrl+click-hold a ball to auto-mesh — link it to every nearby ball, repeatedly while held (drag outward to grow the radius).</b> Shift+click target to keep source selected for rapid spoke-linking; <b>Shift+click-hold on a target to spam reinforcement strands.</b></span>
       <span class="kbd">Pin</span>     <span>Click a ball to toggle whether it's fixed in place.</span>
       <span class="kbd">Push</span>    <span>Hold to push balls radially away from the cursor.</span>
       <span class="kbd">Attract</span> <span>Hold to pull balls toward the cursor.</span>

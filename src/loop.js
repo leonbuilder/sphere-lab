@@ -229,13 +229,6 @@ function drawToolPreviews(tx) {
       if (b === src) continue;
       const dx = b.x - cx, dy = b.y - cy;
       if (dx * dx + dy * dy > r2) continue;
-      // Also skip pairs already linked — commit path skips them too, so
-      // the preview should reflect that.
-      let linked = false;
-      for (const sp of W.springs) {
-        if ((sp.a === src && sp.b === b) || (sp.a === b && sp.b === src)) { linked = true; break; }
-      }
-      if (linked) continue;
       tx.beginPath(); tx.moveTo(src.x, src.y); tx.lineTo(b.x, b.y); tx.stroke();
     }
   }

@@ -32,8 +32,14 @@ export const mouse = {
   mesh: {
     active: false,
     /** @type {import('../entities/ball.js').Ball | null} */ source: null,
-    cx: 0, cy: 0
-  }
+    cx: 0, cy: 0,
+    /** Springs created during a held mesh gesture (auto-repeat + release),
+     *  all batched into one undo entry. */
+    /** @type {any[]} */ batch: []
+  },
+  /** Balls spawned during a held Spawn-tool gesture (auto-spam). Batched
+   *  into a single undo entry. */
+  /** @type {any[]} */ autoSpawned: []
 };
 
 /** Default mesh radius when user Ctrl-clicks without dragging. */
@@ -53,36 +59,99 @@ addEventListener('keyup',   e => { if (e.key === 'Shift') mouse.shift = false; }
 addEventListener('blur', () => { mouse.shift = false; });
 
 /* ------------------------------------------------------------------ */
-/*  Auto-repeat link (hold shift + mouse on a target to spam strands)  */
+/*  Auto-repeat gestures — hold mouse to keep firing                    */
 /* ------------------------------------------------------------------ */
-let _autoLinkT = 0;
-/** How fast auto-repeat fires. 120 ms → ~8 strands per second, which is
- *  fast enough to heavily reinforce in a second of holding but slow
- *  enough that the user can release at a specific strand count. */
-const AUTO_LINK_INTERVAL = 0.12;
+/* Three separate timers, all ticked from loop.js each frame. They let
+ * the user hold the mouse button to repeat the gesture they just
+ * committed, instead of clicking dozens of times:
+ *   - Link tool:  shift+hold over a target → spam reinforcement strands
+ *   - Link tool:  Ctrl+hold → keep re-committing the mesh at current radius
+ *   - Spawn tool: hold without dragging → keep spawning balls at cursor
+ */
+let _autoLinkT  = 0;
+let _autoMeshT  = 0;
+let _spawnHoldT = 0;
+let _spawnBurstT = 0;
+/** 120 ms / 180 ms / 150 ms — chosen so each gesture gives good control
+ *  (roughly 6-8 events/sec, fast enough to be productive, slow enough
+ *  that the user can release at a specific count). */
+const AUTO_LINK_INTERVAL   = 0.12;
+const AUTO_MESH_INTERVAL   = 0.18;
+const SPAWN_HOLD_DELAY     = 0.22;
+const SPAWN_BURST_INTERVAL = 0.15;
 
-/** Called each frame from loop.js. When the user holds the mouse on a
- *  target ball while Shift is down, keeps creating reinforcement strands
- *  at a steady cadence so they don't have to click repeatedly.           */
 export function tickMouse(dt) {
-  if (mouse.down && mouse.shift && mouse.linkFirst && getTool() === 'link') {
+  const tool = getTool();
+
+  // (1) Shift+hold over a target ball → auto-reinforce.
+  if (mouse.down && mouse.shift && mouse.linkFirst && tool === 'link' && !mouse.mesh.active) {
     const hit = ballAt(mouse.wx, mouse.wy);
     if (hit && hit !== mouse.linkFirst) {
       _autoLinkT += dt;
       if (_autoLinkT >= AUTO_LINK_INTERVAL) {
         _autoLinkT = 0;
-        const s = createLink(mouse.linkFirst, hit);
-        // Share chainSprings with drag-chain so the whole held gesture
-        // batches into one undo entry.
-        mouse.chainSprings.push(s);
+        mouse.chainSprings.push(createLink(mouse.linkFirst, hit));
       }
     } else {
-      // Cursor drifted off the target — pause the timer so the first
-      // strand after coming back on waits a full interval.
       _autoLinkT = 0;
     }
   } else {
     _autoLinkT = 0;
+  }
+
+  // (2) Ctrl+hold auto-mesh → commit the mesh at current radius on each
+  // interval tick, so repeated holding keeps piling up reinforcement.
+  if (mouse.down && mouse.mesh.active && mouse.mesh.source && tool === 'link') {
+    _autoMeshT += dt;
+    if (_autoMeshT >= AUTO_MESH_INTERVAL) {
+      _autoMeshT = 0;
+      commitMesh(mouse.mesh.batch);
+    }
+  } else {
+    _autoMeshT = 0;
+  }
+
+  // (3) Shift-held Spawn hold-to-paint. Explicit gate: paint only
+  // activates when Shift is held. Plain click/drag keeps its classic
+  // behavior (single on click, slingshot on drag) unaffected. Shift+
+  // quick-click-release still fires the burst-of-10 via the mouseup
+  // handler; Shift+hold-long-enough activates paint and suppresses
+  // the release behavior.
+  if (mouse.down && !mouse.grab && mouse.shift && tool === 'spawn') {
+    _spawnHoldT += dt;
+    if (_spawnHoldT >= SPAWN_HOLD_DELAY) {
+      _spawnBurstT += dt;
+      if (_spawnBurstT >= SPAWN_BURST_INTERVAL) {
+        _spawnBurstT = 0;
+        const b = spawnBall(mouse.wx, mouse.wy);
+        if (b) {
+          // Small random kick so piled balls don't stack perfectly
+          b.vx += rand(-25, 25);
+          b.vy += rand(-25, 25);
+          mouse.autoSpawned.push(b);
+        }
+      }
+    }
+  } else {
+    _spawnHoldT = 0;
+    _spawnBurstT = 0;
+  }
+}
+
+/** Commit a mesh at the current radius, pushing newly-created springs
+ *  into the provided batch array (for end-of-gesture undo). Shared by
+ *  the mouseup path and the Ctrl-hold auto-repeat.                    */
+function commitMesh(batch) {
+  const src = mouse.mesh.source;
+  if (!src) return;
+  const cx = mouse.mesh.cx, cy = mouse.mesh.cy;
+  const r  = meshRadius();
+  const r2 = r * r;
+  for (const other of balls) {
+    if (other === src) continue;
+    const dx = other.x - cx, dy = other.y - cy;
+    if (dx * dx + dy * dy > r2) continue;
+    batch.push(createLink(src, other));
   }
 }
 
@@ -271,31 +340,15 @@ addEventListener('mouseup', e => {
     return;
   }
 
-  // Ctrl-click auto-mesh: commit the radius reached at release, linking
-  // the source ball to every other ball inside it (that isn't already
-  // linked). One click → potentially many links. Batched undo.
+  // Ctrl-click auto-mesh: commit one final mesh at release, plus any
+  // auto-repeat meshes that fired during the hold. Whole held gesture
+  // batches into one undo entry.
   if (TOOL === 'link' && mouse.mesh.active && mouse.mesh.source) {
-    const src = mouse.mesh.source;
-    const cx = mouse.mesh.cx, cy = mouse.mesh.cy;
-    const r = meshRadius();
-    const r2 = r * r;
-    const created = [];
-    for (const other of balls) {
-      if (other === src) continue;
-      const dx = other.x - cx, dy = other.y - cy;
-      if (dx * dx + dy * dy > r2) continue;
-      // Skip pairs that already have any spring — repeated ctrl-clicks
-      // shouldn't keep stacking strands silently. Users who want
-      // reinforcement have shift-click + drag-chain for that.
-      let existing = false;
-      for (const sp of W.springs) {
-        if ((sp.a === src && sp.b === other) || (sp.a === other && sp.b === src)) {
-          existing = true; break;
-        }
-      }
-      if (existing) continue;
-      created.push(createLink(src, other));
-    }
+    commitMesh(mouse.mesh.batch);
+    const created = mouse.mesh.batch.slice();
+    mouse.mesh.batch.length = 0;
+    mouse.mesh.active = false;
+    mouse.mesh.source = null;
     if (created.length) {
       pushUndo(() => {
         for (const sp of created) {
@@ -304,8 +357,6 @@ addEventListener('mouseup', e => {
         }
       });
     }
-    mouse.mesh.active = false;
-    mouse.mesh.source = null;
     return;
   }
 
@@ -326,6 +377,21 @@ addEventListener('mouseup', e => {
   }
 
   if (TOOL === 'spawn') {
+    // If the user was holding in place (auto-spam fired balls during
+    // the hold), just batch-undo those and skip the normal release
+    // logic — otherwise the mouseup would spawn one extra ball.
+    if (mouse.autoSpawned.length) {
+      const batch = mouse.autoSpawned.slice();
+      mouse.autoSpawned.length = 0;
+      pushUndo(() => {
+        for (const b of batch) {
+          const i = balls.indexOf(b);
+          if (i >= 0) balls.splice(i, 1);
+        }
+      });
+      return;
+    }
+
     const dx = mouse.wsx - mouse.wx;
     const dy = mouse.wsy - mouse.wy;
     const d = len(dx, dy);
