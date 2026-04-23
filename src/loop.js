@@ -157,7 +157,10 @@ function drawToolPreviews(tx) {
   const TOOL = getTool();
   const accent = themeColor('--accent', '#ffaa33');
 
-  if (mouse.down && TOOL === 'spawn' && !mouse.grab) {
+  // Slingshot preview — skipped while Shift is held, since Shift puts
+  // the Spawn tool in burst/paint mode (no launch on release) and the
+  // arrow would be misleading.
+  if (mouse.down && TOOL === 'spawn' && !mouse.grab && !mouse.shift) {
     const dx = mouse.wsx - mouse.wx, dy = mouse.wsy - mouse.wy;
     const d = len(dx, dy);
     if (d > 5) {
