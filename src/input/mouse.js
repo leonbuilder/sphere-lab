@@ -124,6 +124,11 @@ addEventListener('mousemove', e => {
 addEventListener('mouseup', e => {
   if (e.button === 1) { mouse.middle = false; return; }
   if (e.button === 2) { mouse.right  = false; return; }
+  // Only run release logic if a canvas mousedown started this gesture.
+  // Since this listener is on `window` (so drag-off-canvas still releases
+  // properly), it also fires on button / panel clicks — and we don't want
+  // clicking the Link button to trigger a spawn-release that shoots a ball.
+  if (!mouse.down) return;
   mouse.down = false;
 
   const TOOL = getTool();
