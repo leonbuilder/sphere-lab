@@ -59,16 +59,47 @@ function getMatTexture(matName) {
       break;
     }
     case 'RUBBER': {
-      // fine dense grain
+      // Vulcanized rubber — dense micro-pores, low-frequency mottling for
+      // hand-feel, plus scattered tiny dark pits that read as real surface.
       const imd = tc.createImageData(TEX_SIZE, TEX_SIZE);
-      for (let i = 0; i < imd.data.length; i += 4) {
-        const v = (Math.random() - 0.5) * 80;
-        imd.data[i]     = clamp255(128 + v);
-        imd.data[i + 1] = clamp255(128 + v);
-        imd.data[i + 2] = clamp255(128 + v);
-        imd.data[i + 3] = 55;
+      for (let y = 0; y < TEX_SIZE; y++) {
+        for (let x = 0; x < TEX_SIZE; x++) {
+          const i = (y * TEX_SIZE + x) * 4;
+          // Low-freq rolling mottle + per-pixel grain
+          const mottle = Math.sin(x * 0.22 + y * 0.17) * 7
+                       + Math.sin(x * 0.08 - y * 0.11) * 5;
+          const v = mottle + (Math.random() - 0.5) * 26;
+          imd.data[i]     = clamp255(128 + v);
+          imd.data[i + 1] = clamp255(128 + v);
+          imd.data[i + 2] = clamp255(128 + v);
+          imd.data[i + 3] = 95;
+        }
       }
       tc.putImageData(imd, 0, 0);
+      // Dense dark pits — the micro-porosity of vulcanized rubber
+      for (let i = 0; i < 260; i++) {
+        tc.fillStyle = `rgba(0,0,0,${0.22 + Math.random() * 0.30})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.28 + Math.random() * 0.75, 0, TAU);
+        tc.fill();
+      }
+      // Sparse micro-highlights on pore rims catching the light
+      for (let i = 0; i < 45; i++) {
+        tc.fillStyle = `rgba(255,255,255,${0.10 + Math.random() * 0.15})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.28 + Math.random() * 0.55, 0, TAU);
+        tc.fill();
+      }
+      // A few faint mold-seam scratches running one direction
+      for (let i = 0; i < 4; i++) {
+        tc.strokeStyle = `rgba(60,30,35,${0.18 + Math.random() * 0.15})`;
+        tc.lineWidth = 0.4;
+        tc.beginPath();
+        const y0 = Math.random() * TEX_SIZE;
+        tc.moveTo(0, y0);
+        tc.lineTo(TEX_SIZE, y0 + (Math.random() - 0.5) * 3);
+        tc.stroke();
+      }
       break;
     }
     case 'GLASS': {
@@ -478,10 +509,22 @@ function drawMotionStreak(tx, b) {
 function drawFresnelRim(tx, b) {
   const inner = b.r * 0.70;
   const outer = b.r * 1.0;
-  const g = tx.createRadialGradient(b.x, b.y, inner, b.x, b.y, outer);
   const metal = b.mat.metallic > 0.5;
-  const matte = b.mat.name === 'RUBBER' || b.mat.name === 'BOWLING';
-  const baseAlpha = metal ? 0.55 : matte ? 0.14 : 0.28;
+  const isRubber  = b.mat.name === 'RUBBER';
+  const isBowling = b.mat.name === 'BOWLING';
+  // Rubber has essentially no Fresnel reflectance (dielectric but very
+  // rough) so skip the bright rim entirely — instead, darken the edge,
+  // which is what the eye reads as "matte soft surface at grazing angle."
+  if (isRubber) {
+    const g = tx.createRadialGradient(b.x, b.y, inner, b.x, b.y, outer);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.35)');
+    tx.fillStyle = g;
+    tx.beginPath(); tx.arc(b.x, b.y, b.r, 0, TAU); tx.fill();
+    return;
+  }
+  const g = tx.createRadialGradient(b.x, b.y, inner, b.x, b.y, outer);
+  const baseAlpha = metal ? 0.55 : isBowling ? 0.14 : 0.28;
   g.addColorStop(0,    'rgba(255,255,255,0)');
   g.addColorStop(0.75, withAlpha('#ffffff', baseAlpha * 0.15));
   g.addColorStop(1,    withAlpha('#ffffff', baseAlpha));
@@ -576,13 +619,14 @@ export function drawBall(tx, b) {
       g.addColorStop(0.5, bodyColor);
       g.addColorStop(1,   darken(bodyColor, 0.55));
     } else if (mat.name === 'RUBBER' || mat.name === 'BOWLING') {
-      // matte elastomer / polymer — flatter gradient, deeper rim shadow.
-      // Lambertian-ish: bright core falls off slowly then darkens sharply
-      // at the edge. No specular hint in the body itself.
-      g.addColorStop(0,    lighten(bodyColor, 0.30));
-      g.addColorStop(0.5,  bodyColor);
-      g.addColorStop(0.85, darken(bodyColor, 0.38));
-      g.addColorStop(1,    darken(bodyColor, 0.65));
+      // Matte elastomer / polymer. Real rubber/polyurethane is nearly pure
+      // Lambertian — only a faint lightening near the illuminated point,
+      // then a long gentle roll-off to a dark occluded rim. No brightness
+      // anywhere near as high as a polished surface.
+      g.addColorStop(0,    lighten(bodyColor, 0.18));
+      g.addColorStop(0.35, bodyColor);
+      g.addColorStop(0.78, darken(bodyColor, 0.40));
+      g.addColorStop(1,    darken(bodyColor, 0.78));
     } else {
       g.addColorStop(0,   lighten(bodyColor, 0.55));
       g.addColorStop(0.6, bodyColor);
@@ -597,15 +641,23 @@ export function drawBall(tx, b) {
   tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.clip();
   drawFresnelRim(tx, b);
 
-  // Subsurface-scatter rim hint for rubber — a faint warm tint near the
-  // edge suggesting light diffusing a short distance into the body before
-  // bouncing back out. Reads as soft translucency.
+  // Subsurface-scatter rim hint for rubber — a warm saturated tint near
+  // the edge suggesting light diffusing a short distance into the body
+  // before bouncing back out. This is the "dark ring with a glowing
+  // border just inside it" look that silhouettes real rubber against
+  // backlight. Also slightly biased toward the illuminator so lit
+  // regions get more forward scatter.
   if (mat.name === 'RUBBER') {
-    const subG = tx.createRadialGradient(x, y, r * 0.72, x, y, r);
-    subG.addColorStop(0, withAlpha(lighten(mat.color, 0.3), 0));
-    subG.addColorStop(1, withAlpha(lighten(mat.color, 0.2), 0.30));
+    tx.save();
+    tx.globalCompositeOperation = 'screen';
+    const subG = tx.createRadialGradient(x, y, r * 0.60, x, y, r);
+    subG.addColorStop(0,    withAlpha(lighten(mat.color, 0.25), 0));
+    subG.addColorStop(0.70, withAlpha(lighten(mat.color, 0.15), 0.12));
+    subG.addColorStop(0.92, withAlpha(lighten(mat.color, 0.30), 0.42));
+    subG.addColorStop(1,    withAlpha(mat.color, 0));
     tx.fillStyle = subG;
     tx.beginPath(); tx.arc(x, y, r, 0, TAU); tx.fill();
+    tx.restore();
   }
 
   // metallic faux env — sky + horizon + ground bands.
@@ -655,26 +707,30 @@ export function drawBall(tx, b) {
   // primary specular (directional). Polished metal has a very tight
   // hotspot plus a wider soft lobe — the dual-lobe structure reads as
   // "real" where a single spot looks like a cartoon reflection.
-  // Matte materials (rubber, bowling) get a wide dim highlight instead.
+  // Rubber gets no spec at all (Lambertian only). Bowling gets a very
+  // dim broad one.
   const isSharpMetal = mat.clearcoat > 0 && mat.metallic > 0.6;
   const isMatte = (mat.name === 'RUBBER' || mat.name === 'BOWLING');
+  const noSpec = (mat.name === 'RUBBER');
   const hx = x + offX * 1.3, hy = y + offY * 1.3;
   const hr = r * (
     isSharpMetal ? 0.085 :
-    isMatte ? 0.34 :
+    isMatte ? 0.40 :
     mat.metallic > 0.5 ? 0.26 :
     0.18
   );
-  const hg = tx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-  hg.addColorStop(0,   isMatte ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,1.0)');
-  hg.addColorStop(0.5,
-    isSharpMetal ? 'rgba(255,255,255,0.55)' :
-    isMatte ? 'rgba(255,255,255,0.10)' :
-    'rgba(255,255,255,0.38)'
-  );
-  hg.addColorStop(1,   'rgba(255,255,255,0)');
-  tx.fillStyle = hg;
-  tx.beginPath(); tx.arc(hx, hy, hr, 0, TAU); tx.fill();
+  if (!noSpec) {
+    const hg = tx.createRadialGradient(hx, hy, 0, hx, hy, hr);
+    hg.addColorStop(0,   isMatte ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,1.0)');
+    hg.addColorStop(0.5,
+      isSharpMetal ? 'rgba(255,255,255,0.55)' :
+      isMatte ? 'rgba(255,255,255,0.06)' :
+      'rgba(255,255,255,0.38)'
+    );
+    hg.addColorStop(1,   'rgba(255,255,255,0)');
+    tx.fillStyle = hg;
+    tx.beginPath(); tx.arc(hx, hy, hr, 0, TAU); tx.fill();
+  }
 
   // Wide soft specular lobe — the fuzzy halo surrounding the hotspot on
   // polished metal. Drawn for any sharp-polished metal (steel/gold/magnet).
