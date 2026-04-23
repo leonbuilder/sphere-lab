@@ -552,35 +552,32 @@ export const Snd = {
 
     // Continuous strength-based envelope shaping.
     //
-    // decayScale: a quiet tap reaches inaudibility well before the full
-    // decay curve finishes, so keeping the oscillator alive for the full
-    // nominal duration wastes voices + blurs the rhythm of rapid hits.
-    // Shortening the decay for soft hits also makes them feel terse,
-    // matching how a real light-tap sounds (brief "tick") vs a slam
-    // (ringing "claaang").
-    //
-    // reverbGain: harder hits move more air → more room response.
-    //
-    // Both curves are smooth in strength so there are no audible
-    // thresholds or stepped transitions.
-    // Wide envelope range so a tap and a slam sound *obviously* different.
-    // Decay varies ~5×, reverb ~5×. Plus the higher-mode excitation curve
-    // is now steep — soft hits play essentially only the fundamental,
-    // hard hits light up the whole mode stack. That's a timbral change,
-    // not just a volume change.
-    const decayScale = 0.20 + 0.80 * strength;
-    const reverbGain = reverbSend * 0.6 * (0.15 + 0.85 * strength);
+    // Every shaping curve here is deliberately smooth so the perceived
+    // "level" of a hit varies continuously with impact — no stepped
+    // thresholds, no audible plateaus. A soft tap, a nudge, a firm hit,
+    // a slam, and a cannon-shot should all feel like distinct points
+    // on one gradient rather than three discrete presets.
+    const decayScale   = 0.20 + 0.80 * strength;
+    const reverbGain   = reverbSend * 0.6 * (0.15 + 0.85 * strength);
+    // Per-hit micro-variation. Repeated hits at near-identical intensities
+    // otherwise sound identical, collapsing fine-grained differences in
+    // the listener's perception. ±6 % amplitude + ±8 % decay jitter gives
+    // the mix natural texture without changing the fundamental character.
+    const ampJitter   = 1 + (Math.random() - 0.5) * 0.12;
+    const decayJitter = 1 + (Math.random() - 0.5) * 0.16;
 
     for (let i = 0; i < profile.modes.length; i++) {
       const m = profile.modes[i];
 
-      // Velocity-dependent excitation. The exponent sharpens with mode
-      // index so high modes need a real slam to ring, while the
-      // fundamental still comes through (mostly) on a gentle tap.
-      // Previous 0.25 was too mild — every mode played at every strength.
-      const excitation = Math.pow(strength, i * 0.50);
-      const peak = m.amp * modeScale * excitation * 0.85;
-      if (peak < 0.001) continue;
+      // Velocity-dependent excitation. Exponent 0.35 gives a smooth,
+      // gradual mode fade-in rather than the hard on/off steps of a
+      // steeper curve. Higher modes still need real energy to ring, but
+      // they whisper at every strength instead of vanishing abruptly.
+      const excitation = Math.pow(strength, i * 0.35);
+      const peak = m.amp * modeScale * excitation * 0.85 * ampJitter;
+      // Lowered cull threshold (0.001 → 0.0003) so quiet modes fade to
+      // inaudibility continuously instead of snapping off at a threshold.
+      if (peak < 0.0003) continue;
 
       const freq = profile.baseFreq * m.ratio * sizeScale;
       // Guard against silly-high frequencies on very small balls
@@ -592,7 +589,7 @@ export const Snd = {
       if (!this._canSpawn()) break;
 
       const detune = 1 + (Math.random() - 0.5) * 0.015;
-      const decay = m.decay * decayScale;
+      const decay = m.decay * decayScale * decayJitter;
 
       const o = this.ctx.createOscillator();
       const g = this.ctx.createGain();
