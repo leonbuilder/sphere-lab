@@ -22,8 +22,30 @@ export const mouse = {
   sx: 0, sy: 0, wsx: 0, wsy: 0,
   /** @type {import('../entities/ball.js').Ball | null} */ grab: null,
   /** @type {import('../entities/ball.js').Ball | null} */ linkFirst: null,
-  draw: { x1: 0, y1: 0, active: false }
+  draw: { x1: 0, y1: 0, active: false },
+  /** Springs created within a single drag-chain gesture — batched into a
+   *  single undo entry on mouseup so Ctrl-Z removes the whole chain. */
+  /** @type {any[]} */ chainSprings: []
 };
+
+/** Build a spring between two balls with reinforcement-aware attachment
+ *  offsets. Pushes the spring to W.springs, plays the click, returns it. */
+function createLink(a, b) {
+  const d = Math.hypot(a.x - b.x, a.y - b.y);
+  let existing = 0;
+  for (const sp of W.springs) {
+    if ((sp.a === a && sp.b === b) || (sp.a === b && sp.b === a)) existing++;
+  }
+  const baseA = Math.atan2(b.y - a.y, b.x - a.x) - a.angle;
+  const baseB = Math.atan2(a.y - b.y, a.x - b.x) - b.angle;
+  const k = (existing + 1) >> 1;
+  const fan = (existing === 0) ? 0
+            : (existing % 2 === 1 ? k : -k) * 0.22;
+  const s = new Spring(a, b, d, 0.6, 0.1, baseA + fan, baseB - fan);
+  W.springs.push(s);
+  Snd.spring();
+  return s;
+}
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -77,35 +99,13 @@ canvas.addEventListener('mousedown', e => {
       return;
     }
     if (mouse.linkFirst) {
-      const a = mouse.linkFirst;
-      const d = Math.hypot(a.x - b.x, a.y - b.y);
-      // Count existing springs between this pair — each re-link adds
-      // a reinforced strand that attaches at a slightly offset point
-      // on both balls so the multiple lines fan out visually.
-      let existing = 0;
-      for (const sp of W.springs) {
-        if ((sp.a === a && sp.b === b) || (sp.a === b && sp.b === a)) existing++;
-      }
-      // Base attachment angle: each ball faces its partner. Compute in
-      // ball-local frame so the attachment rotates with the ball.
-      const baseA = Math.atan2(b.y - a.y, b.x - a.x) - a.angle;
-      const baseB = Math.atan2(a.y - b.y, a.x - b.x) - b.angle;
-      // Fan offset: 0, +δ, -δ, +2δ, -2δ, ... (δ ≈ 0.22 rad ≈ 12.6°).
-      const k = (existing + 1) >> 1;
-      const fan = (existing === 0) ? 0
-                : (existing % 2 === 1 ? k : -k) * 0.22;
-      const offA = baseA + fan;
-      const offB = baseB - fan;   // opposite sign keeps strands roughly parallel
-      const s = new Spring(a, b, d, 0.6, 0.1, offA, offB);
-      W.springs.push(s);
-      Snd.spring();
+      // Explicit click-to-link: push its own undo entry immediately.
+      const s = createLink(mouse.linkFirst, b);
       pushUndo(() => {
         const i = W.springs.indexOf(s);
         if (i >= 0) W.springs.splice(i, 1);
       });
-      // Shift held → keep the source selected for rapid chain-linking
-      // (reinforce the same pair, or spoke-link one hub to many targets).
-      // Plain click clears source so the next click selects a new one.
+      // Shift held → keep source for rapid reinforcement / spoke-linking.
       if (!mouse.shift) mouse.linkFirst = null;
       return;
     }
@@ -148,6 +148,19 @@ addEventListener('mousemove', e => {
     cam.tx += -e.movementX / cam.zoom;
     cam.ty += -e.movementY / cam.zoom;
   }
+
+  // Drag-chain linking: while holding the mouse in Link tool with a
+  // source ball selected, entering any new ball auto-links it and
+  // advances the source. Lets the user chain-link dozens of balls in
+  // one continuous stroke — press on A, drag through B-C-D-E, release.
+  if (mouse.down && mouse.linkFirst && getTool() === 'link') {
+    const hit = ballAt(mouse.wx, mouse.wy);
+    if (hit && hit !== mouse.linkFirst) {
+      const s = createLink(mouse.linkFirst, hit);
+      mouse.chainSprings.push(s);
+      mouse.linkFirst = hit;
+    }
+  }
 });
 
 addEventListener('mouseup', e => {
@@ -169,6 +182,21 @@ addEventListener('mouseup', e => {
     mouse.grab.vy += dy * 10;
     mouse.grab.grabbed = false;
     mouse.grab = null;
+    return;
+  }
+
+  // If the user just completed a drag-chain of links, collapse every
+  // strand they drew into a single undo entry so one Ctrl-Z removes
+  // the whole chain (rather than requiring N presses for N links).
+  if (TOOL === 'link' && mouse.chainSprings.length) {
+    const chain = mouse.chainSprings.slice();
+    mouse.chainSprings.length = 0;
+    pushUndo(() => {
+      for (const sp of chain) {
+        const i = W.springs.indexOf(sp);
+        if (i >= 0) W.springs.splice(i, 1);
+      }
+    });
     return;
   }
 
