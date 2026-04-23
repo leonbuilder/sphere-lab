@@ -12,7 +12,8 @@ import { loadScene } from '../scenes/index.js';
 import { setTool } from './tools.js';
 import { updatePauseBtn, updateSlowmoBtn, updateToggle, updateMatButtons } from '../ui/hud.js';
 import { undo } from '../core/undo.js';
-import { savePref } from '../core/persistence.js';
+import { savePref, getPref } from '../core/persistence.js';
+import { setPanelOpen } from '../ui/buttons.js';
 
 export const keys = { left: false, right: false };
 
@@ -47,6 +48,8 @@ addEventListener('keydown', e => {
   else if (key === 's')              { PHYS.sound   = !PHYS.sound;   updateToggle('t-sound', PHYS.sound);   savePref('t-sound', PHYS.sound); }
   else if (key === 'h')              { PHYS.heatFx  = !PHYS.heatFx;  updateToggle('t-heat',  PHYS.heatFx);  savePref('t-heat', PHYS.heatFx); }
   else if (key === '0')              { cam.tx = W.cw / 2; cam.ty = W.ch / 2; cam.tz = 1; }
+  else if (key === ',')              { setPanelOpen('left',  !getPref('panel-left-open',  1)); }
+  else if (key === '.')              { setPanelOpen('right', !getPref('panel-right-open', 1)); }
   else if (TOOL_KEYS[key])           { setTool(TOOL_KEYS[key]); }
   else if (key >= '1' && key <= '9') {
     const idx = parseInt(key) - 1;
