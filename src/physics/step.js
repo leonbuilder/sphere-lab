@@ -109,8 +109,8 @@ export function physicsStep(dt) {
         spawnSmoke(b.x + rand(-b.r * 0.5, b.r * 0.5), b.y - b.r * 0.3, 0, -15,
                    'rgba(50,40,48,0.45)', 0.85);
       }
-      // Hot metals throw small embers.
-      else if ((matName === 'STEEL' || matName === 'GOLD' || matName === 'MAGNET') && b.heat > 0.55 && Math.random() < dt * 10) {
+      // Hot metals throw small embers. Flame-colored so gated by Fire.
+      else if (PHYS.fire && (matName === 'STEEL' || matName === 'GOLD' || matName === 'MAGNET') && b.heat > 0.55 && Math.random() < dt * 10) {
         const emberColor = matName === 'GOLD' ? '#ffd890' : matName === 'MAGNET' ? '#ff9060' : '#ffb060';
         spawnSparkle(b.x + rand(-b.r * 0.4, b.r * 0.4), b.y + rand(-b.r * 0.4, b.r * 0.4),
                      0, -1, 35, emberColor);
@@ -161,8 +161,10 @@ export function physicsStep(dt) {
     }
 
     // TNT fuse — tiny sparks fly off while the fuse burns, plus warning
-    // sparkle cadence that gets frantic near detonation.
-    if (b.fuseT > 0 && !b.isFragment) {
+    // sparkle cadence that gets frantic near detonation. Fire toggle off
+    // silences these (the fuse still burns + the tip still glints in the
+    // ball renderer, so the player sees the countdown visually).
+    if (b.fuseT > 0 && !b.isFragment && PHYS.fire) {
       const urgency = 1 - (b.fuseT / 0.35);
       if (Math.random() < dt * (18 + urgency * 40)) {
         particles.push({
@@ -253,8 +255,9 @@ export function physicsStep(dt) {
     // Hot-ball cooling trail — a short fading heat smear behind any moving
     // hot ball. Reuses the smoke particle type with hot colors so there's
     // no new particle branch. Only spawns above a speed threshold so
-    // stationary hot balls keep their vertical shimmer-only look.
-    if (PHYS.heatFx && b.heat > 0.3 && !b.isFragment) {
+    // stationary hot balls keep their vertical shimmer-only look. Gated by
+    // Fire since it's one of the most visible flame-like effects.
+    if (PHYS.heatFx && PHYS.fire && b.heat > 0.3 && !b.isFragment) {
       const spd = len(b.vx, b.vy);
       if (spd > 70 && Math.random() < dt * 32) {
         const hotCol = b.heat > 0.65

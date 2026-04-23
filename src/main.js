@@ -31,11 +31,12 @@ import './input/keyboard.js';
 
 /** Push persisted prefs into PHYS + DOM on boot. */
 function applySavedPrefs() {
-  const toggleIds = ['t-bloom','t-shadow','t-blur','t-trail','t-vec','t-sound','t-refract','t-heat','t-ao','t-aberration','t-grain','t-streaks','t-flare'];
+  const toggleIds = ['t-bloom','t-shadow','t-blur','t-trail','t-vec','t-sound','t-refract','t-heat','t-ao','t-aberration','t-grain','t-streaks','t-flare','t-fire'];
   const ids2keys = {
     't-bloom':'bloom','t-shadow':'shadow','t-blur':'motionBlur','t-trail':'trails',
     't-vec':'showVec','t-sound':'sound','t-refract':'refract','t-heat':'heatFx',
-    't-ao':'ao','t-aberration':'aberration','t-grain':'grain','t-streaks':'streaks','t-flare':'flare'
+    't-ao':'ao','t-aberration':'aberration','t-grain':'grain','t-streaks':'streaks','t-flare':'flare',
+    't-fire':'fire'
   };
   for (const id of toggleIds) {
     const key = ids2keys[id];

@@ -10,6 +10,7 @@
  */
 
 import { rand, TAU } from '../core/math.js';
+import { PHYS } from '../core/config.js';
 import { balls } from '../entities/ball.js';
 import { particles } from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
@@ -82,17 +83,29 @@ function detonate(b) {
     }
   }
 
-  // Bright flash + smoke + sparks
-  for (let i = 0; i < 80; i++) {
-    const a = rand(0, TAU);
-    const sp = rand(160, 560);
+  // Bright flash + sparks — gated by the Fire toggle. With Fire off the
+  // blast is still physically real (impulse + heat + sound + smoke) but
+  // the flame-colored particles and shockwave ring are suppressed.
+  if (PHYS.fire) {
+    for (let i = 0; i < 80; i++) {
+      const a = rand(0, TAU);
+      const sp = rand(160, 560);
+      particles.push({
+        x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: rand(0.35, 0.9), maxLife: 0.9,
+        color: i < 40 ? '#ffdb66' : '#ff6a28',
+        size: rand(1.2, 3.4), type: 'spark'
+      });
+    }
     particles.push({
-      x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
-      life: rand(0.35, 0.9), maxLife: 0.9,
-      color: i < 40 ? '#ffdb66' : '#ff6a28',
-      size: rand(1.2, 3.4), type: 'spark'
+      x, y, vx: 0, vy: 0,
+      life: 0.55, maxLife: 0.55,
+      color: '#ffdb66', size: 2, type: 'ring',
+      ringR0: 6, ringR1: r * 0.9
     });
   }
+  // Smoke always plays so the blast still reads as an explosion even with
+  // fire off.
   for (let i = 0; i < 24; i++) {
     const a = rand(0, TAU);
     const sp = rand(40, 120);
@@ -102,13 +115,6 @@ function detonate(b) {
       color: 'rgba(90,70,60,0.55)', size: rand(8, 16), type: 'smoke'
     });
   }
-  // Shockwave ring — visible expanding circle.
-  particles.push({
-    x, y, vx: 0, vy: 0,
-    life: 0.55, maxLife: 0.55,
-    color: '#ffdb66', size: 2, type: 'ring',
-    ringR0: 6, ringR1: r * 0.9
-  });
 
   Snd.bonk(90, 0.5, 0.45, 'sawtooth');
   Snd.noise(0.45, 0.28, 2500);

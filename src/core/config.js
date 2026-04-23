@@ -34,6 +34,7 @@ export const PHYS = {
   motionBlur: false, trails: false, showVec: false,
   bloom: true, shadow: true, sound: true, refract: true, heatFx: true,
   ao: true, aberration: true, grain: true, streaks: true, flare: true,
+  fire: true,
   volume: 0.45
 };
 

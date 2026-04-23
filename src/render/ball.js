@@ -1040,16 +1040,20 @@ export function drawBall(tx, b) {
     tx.lineTo(fuseX, fuseY - fuseLen * 0.5);
     tx.stroke();
     if (b.fuseT > 0) {
-      // bright burning tip + glow
+      // burning tip — flame gated by Fire toggle (bright flame halo),
+      // but a small white core still renders so the player can see the
+      // fuse is actively lit even with fire off.
       const urgency = Math.min(1, 1 - (b.fuseT / 0.35));
       const tipR = 1.4 + urgency * 1.2;
       const tipY = fuseY - fuseLen * 0.5;
-      const g = tx.createRadialGradient(fuseX, tipY, 0, fuseX, tipY, tipR * 3.5);
-      g.addColorStop(0,   'rgba(255,240,120,1)');
-      g.addColorStop(0.4, 'rgba(255,150,40,0.65)');
-      g.addColorStop(1,   'rgba(255,150,40,0)');
-      tx.fillStyle = g;
-      tx.beginPath(); tx.arc(fuseX, tipY, tipR * 3.5, 0, TAU); tx.fill();
+      if (PHYS.fire) {
+        const g = tx.createRadialGradient(fuseX, tipY, 0, fuseX, tipY, tipR * 3.5);
+        g.addColorStop(0,   'rgba(255,240,120,1)');
+        g.addColorStop(0.4, 'rgba(255,150,40,0.65)');
+        g.addColorStop(1,   'rgba(255,150,40,0)');
+        tx.fillStyle = g;
+        tx.beginPath(); tx.arc(fuseX, tipY, tipR * 3.5, 0, TAU); tx.fill();
+      }
       tx.fillStyle = '#ffffff';
       tx.beginPath(); tx.arc(fuseX, tipY, tipR, 0, TAU); tx.fill();
     }
