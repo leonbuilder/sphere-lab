@@ -337,15 +337,19 @@ export const Snd = {
       this.master = this.ctx.createGain();
       this.master.gain.value = PHYS.volume;
 
-      // Master limiter — hard-ish ceiling so dense bursts can't clip or
-      // pump the whole mix down. Fast attack, moderate release so
-      // individual impacts still punch through.
+      // Master limiter — a gentle safety net, not a dynamics-killer.
+      // Previous settings (-10 dB threshold, 6:1 ratio) were squashing
+      // the very dynamic range the modal envelope is trying to
+      // express: soft and hard hits ended up at nearly the same
+      // perceived loudness. Now only the peaks above -6 dB get
+      // reduced, and at 3:1 so the reduction is subtle. Dense
+      // cascades still can't clip, but individual hits breathe.
       const comp = this.ctx.createDynamicsCompressor();
-      comp.threshold.value = -10;
-      comp.knee.value = 6;
-      comp.ratio.value = 6;
-      comp.attack.value = 0.002;
-      comp.release.value = 0.09;
+      comp.threshold.value = -6;
+      comp.knee.value = 10;
+      comp.ratio.value = 3;
+      comp.attack.value = 0.003;
+      comp.release.value = 0.12;
       this.master.connect(comp);
       comp.connect(this.ctx.destination);
 
@@ -516,9 +520,21 @@ export const Snd = {
     // coupled surface ringing. `attack` is the filtered ring-up that
     // optionally shifts brighter with harder impacts (velHpScale) — real
     // metal contacts get sharper-spectrum as contact time shortens.
+    //
+    // Strength-dependent shaping (continuous, no stepped presets) so a
+    // soft tap really does sound different from a hard slam — same
+    // material, same pitch, but the dynamic envelope is different:
+    //   • onset duration shortens with strength (Hertzian contact time)
+    //   • mode decays lengthen with strength (more energy → longer ring)
+    //   • reverb send rises with strength (hard hits radiate into the room)
     const attackAmp = strength * (1 - otherSoftness * 0.35);
     if (profile.onset) {
-      this._onset(profile.onset, strength * (1 - otherSoftness * 0.25), pan);
+      const onsetDur = profile.onset.dur * clamp(1.20 - strength * 0.45, 0.70, 1.25);
+      this._onset(
+        { dur: onsetDur, amp: profile.onset.amp },
+        strength * (1 - otherSoftness * 0.25),
+        pan
+      );
     }
     const atk = profile.attack;
     const effAtk = atk.velHpScale
@@ -534,12 +550,35 @@ export const Snd = {
     const sizeScale = Math.pow(REF_R / radius, profile.sizeExp || 0);
     const reverbSend = profile.reverbSend ?? 0.15;
 
+    // Continuous strength-based envelope shaping.
+    //
+    // decayScale: a quiet tap reaches inaudibility well before the full
+    // decay curve finishes, so keeping the oscillator alive for the full
+    // nominal duration wastes voices + blurs the rhythm of rapid hits.
+    // Shortening the decay for soft hits also makes them feel terse,
+    // matching how a real light-tap sounds (brief "tick") vs a slam
+    // (ringing "claaang").
+    //
+    // reverbGain: harder hits move more air → more room response.
+    //
+    // Both curves are smooth in strength so there are no audible
+    // thresholds or stepped transitions.
+    // Wide envelope range so a tap and a slam sound *obviously* different.
+    // Decay varies ~5×, reverb ~5×. Plus the higher-mode excitation curve
+    // is now steep — soft hits play essentially only the fundamental,
+    // hard hits light up the whole mode stack. That's a timbral change,
+    // not just a volume change.
+    const decayScale = 0.20 + 0.80 * strength;
+    const reverbGain = reverbSend * 0.6 * (0.15 + 0.85 * strength);
+
     for (let i = 0; i < profile.modes.length; i++) {
       const m = profile.modes[i];
 
-      // Velocity-dependent excitation — higher modes need harder hits to
-      // ring. `strength ^ (i · 0.25)` gives a smooth falloff.
-      const excitation = Math.pow(strength, i * 0.25);
+      // Velocity-dependent excitation. The exponent sharpens with mode
+      // index so high modes need a real slam to ring, while the
+      // fundamental still comes through (mostly) on a gentle tap.
+      // Previous 0.25 was too mild — every mode played at every strength.
+      const excitation = Math.pow(strength, i * 0.50);
       const peak = m.amp * modeScale * excitation * 0.85;
       if (peak < 0.001) continue;
 
@@ -553,6 +592,7 @@ export const Snd = {
       if (!this._canSpawn()) break;
 
       const detune = 1 + (Math.random() - 0.5) * 0.015;
+      const decay = m.decay * decayScale;
 
       const o = this.ctx.createOscillator();
       const g = this.ctx.createGain();
@@ -561,15 +601,15 @@ export const Snd = {
 
       g.gain.setValueAtTime(0, t);
       g.gain.linearRampToValueAtTime(peak, t + 0.002);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + m.decay);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + decay);
 
       o.connect(g);
       g.connect(pan);
 
       // bright modes also tickle the reverb bus
-      if (this.wetBus && freq > 1500 && reverbSend > 0) {
+      if (this.wetBus && freq > 1500 && reverbGain > 0) {
         const send = this.ctx.createGain();
-        send.gain.value = reverbSend * 0.6;
+        send.gain.value = reverbGain;
         g.connect(send);
         send.connect(this.wetBus);
       }
@@ -577,7 +617,7 @@ export const Snd = {
       o.onended = () => this._release();
       this._claim();
       o.start(t);
-      o.stop(t + m.decay + 0.05);
+      o.stop(t + decay + 0.05);
     }
   },
 
@@ -590,10 +630,18 @@ export const Snd = {
    * damped by the other's softness. `vn` is the pre-impact relative
    * normal speed; below ~14 px/s the contact is sliding / resting, not
    * a real impact, and we stay silent.
+   *
+   * Strength uses a square-root mapping: linear mag·k saturated far too
+   * early (every cradle tick was already at max), so typical in-game
+   * hits all sounded identically "hard". sqrt spreads the usable range
+   * across the full 0..1 band — a gentle nudge sits around 0.2, a
+   * typical mid-play impact near 0.5, a pinball launch or heavy drop
+   * pushes toward 0.95. Now the dynamic-envelope changes in
+   * emitMaterialSound actually get to express themselves.
    */
   collision(a, b, magnitude, vn = Infinity) {
     if (vn < MIN_AUDIBLE_VN_BALL) return;
-    const strength = clamp(magnitude * 0.003, 0.04, 0.9);
+    const strength = clamp(Math.sqrt(magnitude) * 0.030, 0.03, 0.98);
     const softA = a.mat.deform ?? 0.2;
     const softB = b.mat.deform ?? 0.2;
     this.emitMaterialSound(a, strength, softB);
@@ -601,10 +649,10 @@ export const Snd = {
   },
 
   /** Ball-on-wall / ball-on-peg — walls count as hard infrastructure.
-   *  Same sliding-contact gate as `collision`.                        */
+   *  Same sliding-contact gate as `collision`, same sqrt mapping.       */
   wall(ball, magnitude, vn = Infinity) {
     if (vn < MIN_AUDIBLE_VN_WALL) return;
-    const strength = clamp(magnitude * 0.0025, 0.035, 0.7);
+    const strength = clamp(Math.sqrt(magnitude) * 0.025, 0.03, 0.92);
     this.emitMaterialSound(ball, strength, 0.15);
   },
 
