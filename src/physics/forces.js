@@ -52,7 +52,11 @@ export function applyBuoyancy(b, dt) {
 
   const fluidDensity = 1.0;
   const ballVol = Math.PI * b.r * b.r * 0.001;
-  const buoyForce = fluidDensity * ballVol * frac * PHYS.gravity * 1.2;
+  // Buoyancy rides on gravity — with gravity off (toggled via G or
+  // button), a submerged ball should just drift, not spontaneously
+  // shoot upward. Drag + splash still apply so water keeps its feel.
+  const gActive = PHYS.gravityOn ? Math.max(0, PHYS.gravity) : 0;
+  const buoyForce = fluidDensity * ballVol * frac * gActive * 1.2;
   b.vy -= buoyForce / b.mass * dt;
 
   const v = len(b.vx, b.vy);
@@ -98,9 +102,9 @@ export function applyMagnetism(dt) {
   const eps = 900;
   for (let i = 0; i < mags.length; i++) {
     const a = mags[i];
-    if (a.pinned) continue;
     for (let j = i + 1; j < mags.length; j++) {
       const b = mags[j];
+      if (a.pinned && b.pinned) continue;
       const dx = b.x - a.x, dy = b.y - a.y;
       const d2 = dx * dx + dy * dy;
       const d = Math.sqrt(d2) || 0.001;
@@ -112,8 +116,14 @@ export function applyMagnetism(dt) {
       const pb = b.polarity || 1;
       const f = (k / (d2 + eps)) * (-pa * pb);
       if (Math.abs(f) > 30) { wake(a); wake(b); }
-      a.vx += nx * f / a.mass * dt;
-      a.vy += ny * f / a.mass * dt;
+      // Apply the force to each non-pinned partner. Pinned balls act as
+      // anchors — they exert force on free partners but don't drift
+      // themselves. Previously, a pinned `a` was skipped entirely,
+      // meaning a free `b` never felt its anchor. Now it does.
+      if (!a.pinned) {
+        a.vx += nx * f / a.mass * dt;
+        a.vy += ny * f / a.mass * dt;
+      }
       if (!b.pinned) {
         b.vx -= nx * f / b.mass * dt;
         b.vy -= ny * f / b.mass * dt;

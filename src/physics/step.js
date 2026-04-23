@@ -87,10 +87,13 @@ export function physicsStep(dt) {
 
       // Ice melts: radius shrinks, mass follows, occasional water droplet.
       // When it gets too small it's gone — water evaporated away.
-      if (matName === 'ICE' && b.heat > 0.2 && b.r > 3.2) {
+      // Previous guards trapped ice at r≈3.15 (outer `r > 3.2` blocked
+      // further melt once the ball had already shrunk a bit, and the
+      // Math.max(3, ...) floor sat above the 3.05 kill threshold).
+      if (matName === 'ICE' && b.heat > 0.2 && b.r > 3.0) {
         const meltRate = (b.heat - 0.2) * 1.6;
         const dr = meltRate * dt;
-        b.r = Math.max(3, b.r - dr);
+        b.r = b.r - dr;
         b.mass = b.r * b.r * mat.density * 0.001;
         b.inertia = 0.5 * b.mass * b.r * b.r;
         b.area = Math.PI * b.r * b.r;

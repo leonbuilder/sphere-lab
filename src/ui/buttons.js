@@ -26,7 +26,11 @@ export function bindButtons() {
 
   // action buttons
   document.getElementById('btn-clear').onclick = () => {
-    balls.length = 0; particles.length = 0; W.springs.length = 0;
+    // Also wipe constraints — otherwise a cradle / chaos / cloth scene
+    // holds dead Ball refs in W.constraints after clearing balls, and
+    // the solver pulls on phantoms.
+    balls.length = 0; particles.length = 0;
+    W.springs.length = 0; W.constraints.length = 0;
   };
   document.getElementById('btn-pause').onclick  = () => { PHYS.paused = !PHYS.paused; updatePauseBtn(); };
   document.getElementById('btn-slowmo').onclick = () => {

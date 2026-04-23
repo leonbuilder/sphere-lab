@@ -172,7 +172,10 @@ function tryFluidMerge(a, b) {
   const nvx = (a.mass * a.vx + b.mass * b.vx) / total;
   const nvy = (a.mass * a.vy + b.mass * b.vy) / total;
 
-  // grow `a` into the merged ball; drop `b`
+  // grow `a` into the merged ball; mark `b` dead for this-step cleanup.
+  // Splicing out of `balls` mid-step would leave stale references in the
+  // current frame's pair list (broadphase.js runs once per step, solver
+  // iterates 3× on that snapshot). `_dead` is cleaned up at end of step.
   a.x = nx; a.y = ny;
   a.vx = nvx; a.vy = nvy;
   a.r = combinedR;
@@ -182,8 +185,7 @@ function tryFluidMerge(a, b) {
   a.omega *= 0.5;
   wake(a);
 
-  const idx = balls.indexOf(b);
-  if (idx >= 0) balls.splice(idx, 1);
+  b._dead = true;
 
   Snd.noise(0.08, 0.14, 1800);
   stats.collisions++;
@@ -205,6 +207,10 @@ export function separateBalls(a, b) {
 }
 
 export function collideBalls(a, b) {
+  // Skip if either ball was removed earlier this step — broadphase pairs
+  // are a snapshot, so mid-step removals (fluid merges, fractures) leave
+  // dangling references that would otherwise phantom-collide.
+  if (a._dead || b._dead) return;
   const dx = b.x - a.x, dy = b.y - a.y;
   const d2 = dx * dx + dy * dy;
   const rsum = a.r + b.r;
@@ -252,6 +258,9 @@ export function collideBalls(a, b) {
     const f = a.charge * b.charge * 500 / (d2 + 10);
     a.vx -= f * nx * invMa;
     a.vy -= f * ny * invMa;
+    // Newton's third law — equal and opposite reaction on b.
+    b.vx += f * nx * invMb;
+    b.vy += f * ny * invMb;
   }
 
   const heatGain = Math.abs(jt) * 0.00005 + Math.abs(vn) * 0.00002;
@@ -430,7 +439,8 @@ export function collidePeg(b, peg) {
   const vn = b.vx * nx + b.vy * ny;
   if (vn >= 0) return;
 
-  const e = b.mat.restitution * PHYS.restitutionMul * (peg.bumper ? 1.8 : 1);
+  const e = b.mat.restitution * PHYS.restitutionMul * (peg.bumper ? 1.8 : 1)
+          * matVelRestScale(Math.abs(vn), b.mat) * heatRestMod(b);
   b.vx -= vn * nx * (1 + e);
   b.vy -= vn * ny * (1 + e);
 

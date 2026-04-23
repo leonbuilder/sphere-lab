@@ -21,11 +21,15 @@ const KEY = 'sphere-lab:snapshot';
 export function saveState() {
   const payload = {
     scene: W.scene,
-    balls: balls.map(b => ({
+    // Skip in-flight fragments — if we saved them their lifespan field
+    // would survive but they'd never cull cleanly after load, leaving
+    // ghost fragments stuck in mid-shatter state. Just drop them.
+    balls: balls.filter(b => !b.isFragment).map(b => ({
       x: b.x, y: b.y, vx: b.vx, vy: b.vy,
       r: b.r, mat: matKeyOf(b.mat),
       pinned: b.pinned, heat: b.heat,
-      angle: b.angle, omega: b.omega
+      angle: b.angle, omega: b.omega,
+      polarity: b.polarity
     }))
   };
   try {
@@ -42,15 +46,22 @@ export function loadState() {
     if (!raw) { flashButton('btn-load', 'Empty'); return; }
     const payload = JSON.parse(raw);
     loadScene(payload.scene || 'sandbox');
+    // Clear the scene's starting balls *and* the springs / constraints
+    // that reference them. Otherwise cradle / cloth / jelly / chaos
+    // springs hold dead Ball references and the solver pulls on phantoms.
     balls.length = 0;
+    W.springs.length = 0;
+    W.constraints.length = 0;
     for (const s of payload.balls || []) {
-      const mat = MATERIALS[s.mat] || MATERIALS.rubber;
+      // Guard against corrupted or prototype-poisoned keys
+      const mat = (Object.prototype.hasOwnProperty.call(MATERIALS, s.mat) && MATERIALS[s.mat]) || MATERIALS.rubber;
       const b = new Ball(s.x, s.y, s.r, mat);
       b.vx = s.vx; b.vy = s.vy;
       b.pinned = !!s.pinned;
       b.heat = s.heat || 0;
       b.angle = s.angle || 0;
       b.omega = s.omega || 0;
+      if (typeof s.polarity === 'number') b.polarity = s.polarity;
       balls.push(b);
     }
     flashButton('btn-load', 'Restored');

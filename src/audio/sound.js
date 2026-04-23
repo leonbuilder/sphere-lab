@@ -641,7 +641,10 @@ export const Snd = {
    */
   collision(a, b, magnitude, vn = Infinity) {
     if (vn < MIN_AUDIBLE_VN_BALL) return;
-    const strength = clamp(Math.sqrt(magnitude) * 0.030, 0.03, 0.98);
+    // Max(0, ...) defends against any future caller passing a negative
+    // magnitude — Math.sqrt(-n) is NaN which then propagates through
+    // every setValueAtTime() in the WebAudio graph and throws.
+    const strength = clamp(Math.sqrt(Math.max(0, magnitude)) * 0.030, 0.03, 0.98);
     const softA = a.mat.deform ?? 0.2;
     const softB = b.mat.deform ?? 0.2;
     this.emitMaterialSound(a, strength, softB);
@@ -652,7 +655,7 @@ export const Snd = {
    *  Same sliding-contact gate as `collision`, same sqrt mapping.       */
   wall(ball, magnitude, vn = Infinity) {
     if (vn < MIN_AUDIBLE_VN_WALL) return;
-    const strength = clamp(Math.sqrt(magnitude) * 0.025, 0.03, 0.92);
+    const strength = clamp(Math.sqrt(Math.max(0, magnitude)) * 0.025, 0.03, 0.92);
     this.emitMaterialSound(ball, strength, 0.15);
   },
 

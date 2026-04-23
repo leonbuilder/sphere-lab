@@ -106,7 +106,12 @@ canvas.addEventListener('mousedown', e => {
   }
 });
 
-canvas.addEventListener('mousemove', e => {
+// mousemove + mouseup listen on `window`, not `canvas`. If a user drags a
+// ball outside the canvas (onto a panel) and releases, the canvas-only
+// handler would never fire mouseup — leaving `mouse.down`, `mouse.grab`,
+// and tool-hold forces stuck on forever until a new click. Listening on
+// window catches releases anywhere on the page.
+addEventListener('mousemove', e => {
   mouse.x = e.clientX; mouse.y = e.clientY;
   const wc = screenToWorld(mouse.x, mouse.y);
   mouse.wx = wc.x; mouse.wy = wc.y;
@@ -116,7 +121,7 @@ canvas.addEventListener('mousemove', e => {
   }
 });
 
-canvas.addEventListener('mouseup', e => {
+addEventListener('mouseup', e => {
   if (e.button === 1) { mouse.middle = false; return; }
   if (e.button === 2) { mouse.right  = false; return; }
   mouse.down = false;

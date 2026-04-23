@@ -15,6 +15,7 @@ import { spawnImpact } from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
 import { stats } from './stats.js';
 import { wake } from '../entities/ball.js';
+import { matVelRestScale, heatRestMod } from './materialMods.js';
 
 export function spawnFlipper(px, py, length, side) {
   const restAngle = side < 0 ?  Math.PI * 0.18 : Math.PI - Math.PI * 0.18;
@@ -48,7 +49,9 @@ export function collideFlipper(b, f) {
   const x2 = f.px + Math.cos(f.angle) * f.length;
   const y2 = f.py + Math.sin(f.angle) * f.length;
   const wx = x2 - x1, wy = y2 - y1;
-  const wlen2 = wx * wx + wy * wy;
+  // Guard against zero-length flippers (scene builder bug) — every other
+  // line-segment routine uses a similar floor to avoid div-by-zero NaN.
+  const wlen2 = (wx * wx + wy * wy) || 1e-6;
 
   let t = ((b.x - x1) * wx + (b.y - y1) * wy) / wlen2;
   t = clamp(t, 0, 1);
@@ -73,7 +76,8 @@ export function collideFlipper(b, f) {
   const vn = relVx * nx + relVy * ny;
   if (vn >= 0) return;
 
-  const e = b.mat.restitution * PHYS.restitutionMul * 1.05;
+  const e = b.mat.restitution * PHYS.restitutionMul * 1.05
+          * matVelRestScale(Math.abs(vn), b.mat) * heatRestMod(b);
   b.vx -= vn * nx * (1 + e);
   b.vy -= vn * ny * (1 + e);
 

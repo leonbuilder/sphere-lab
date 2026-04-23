@@ -20,12 +20,19 @@ addEventListener('keydown', e => {
   const key = e.key.toLowerCase();
   if (e.target instanceof HTMLInputElement) return;
 
-  // flippers
+  // Modifier-required handlers first — these intentionally consume the
+  // modifier. Placed before the plain-key guard below so they fire.
+  if (key === 'z' && (e.ctrlKey || e.metaKey)) { undo(); e.preventDefault(); return; }
+  if (key === 'r' && e.ctrlKey)                { loadScene(W.scene); e.preventDefault(); return; }
+
+  // flippers — arrow keys (no modifier involved)
   if (key === 'arrowleft')  { keys.left  = true; for (const f of W.flippers) if (f.side < 0) f.active = true; e.preventDefault(); return; }
   if (key === 'arrowright') { keys.right = true; for (const f of W.flippers) if (f.side > 0) f.active = true; e.preventDefault(); return; }
 
-  // undo
-  if (key === 'z' && (e.ctrlKey || e.metaKey)) { undo(); e.preventDefault(); return; }
+  // All remaining shortcuts are plain keys. Yield to the browser if any
+  // modifier is held so Cmd-S (save page), Ctrl-F (find), Alt-Tab, etc.
+  // work normally without also toggling our physics.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
 
   if (key === ' ') { PHYS.paused = !PHYS.paused; updatePauseBtn(); e.preventDefault(); }
   else if (key === 'f') {
@@ -33,8 +40,7 @@ addEventListener('keydown', e => {
     updateSlowmoBtn();
   }
   else if (key === 'g')              { PHYS.gravityOn = !PHYS.gravityOn; setGravityUI(PHYS.gravityOn); }
-  else if (key === 'c')              { balls.length = 0; particles.length = 0; W.springs.length = 0; }
-  else if (key === 'r' && e.ctrlKey) { loadScene(W.scene); e.preventDefault(); }
+  else if (key === 'c')              { balls.length = 0; particles.length = 0; W.springs.length = 0; W.constraints.length = 0; }
   else if (key === 'm')              { PHYS.motionBlur = !PHYS.motionBlur; updateToggle('t-blur', PHYS.motionBlur); savePref('t-blur', PHYS.motionBlur); }
   else if (key === 'b')              { PHYS.bloom   = !PHYS.bloom;   updateToggle('t-bloom', PHYS.bloom);   savePref('t-bloom', PHYS.bloom); }
   else if (key === 'v')              { PHYS.showVec = !PHYS.showVec; updateToggle('t-vec',   PHYS.showVec); savePref('t-vec', PHYS.showVec); }
