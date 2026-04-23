@@ -17,6 +17,31 @@ export function velRestScale(vMag) {
 }
 
 /**
+ * Material-aware velocity-restitution shape.
+ *
+ * Most materials use the default monotonic curve above (gentle hits near 1,
+ * hard hits plasticize toward 0.35). Rubber is genuinely different — it's
+ * viscoelastic, which means:
+ *
+ *   very slow impacts:  polymer chains have time to relax → low restitution
+ *   moderate speeds:    elastic rebound dominates        → high restitution
+ *   very fast impacts:  hysteresis dumps energy to heat  → low restitution
+ *
+ * So rubber gets a *bell* curve (dead-soft at v=0, peak ~v=300, rolls off
+ * above ~v=1000). The visible behaviour: a rubber ball rested on another
+ * rubber ball doesn't bounce (viscous release), but dropped from height it
+ * bounces lively, then a cannon-velocity hit deadens again.
+ */
+export function matVelRestScale(vMag, mat) {
+  if (mat && mat.name === 'RUBBER') {
+    const onset   = 1 - Math.exp(-vMag / 70);            // 0 → 1 as v rises
+    const rolloff = 1 / (1 + vMag * vMag * 0.0000008);   // 1 → 0 at high v
+    return 0.45 + 0.55 * onset * rolloff;
+  }
+  return velRestScale(vMag);
+}
+
+/**
  * Per-ball elasticity modifier from heat. Different materials respond
  * differently to being hot:
  *   rubber → mushy (harder to bounce)

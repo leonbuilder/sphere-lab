@@ -647,7 +647,7 @@ export const Snd = {
   _rollProfile(matName) {
     switch (matName) {
       case 'STEEL':   return { type: 'bandpass', freq: 2200, q: 6.0, gs: 1.00 };
-      case 'RUBBER':  return { type: 'bandpass', freq: 1100, q: 5.0, gs: 1.40 };
+      case 'RUBBER':  return { type: 'bandpass', freq:  950, q: 3.8, gs: 1.55 };
       case 'GLASS':   return { type: 'highpass', freq: 5500, q: 1.0, gs: 0.85 };
       case 'BOWLING': return { type: 'lowpass',  freq: 280,  q: 0.7, gs: 1.15 };
       case 'NEON':    return { type: 'bandpass', freq: 1800, q: 3.0, gs: 0.90 };

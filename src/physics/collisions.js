@@ -19,7 +19,7 @@ import {
   spawnImpact, spawnSparkle, spawnChip, spawnDust, spawnSmoke
 } from '../entities/particles.js';
 import { Snd } from '../audio/sound.js';
-import { velRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from './materialMods.js';
+import { velRestScale, matVelRestScale, heatRestMod, heatFricMod, combineFriction, invMass } from './materialMods.js';
 import { stats } from './stats.js';
 import { wake, balls, Ball } from '../entities/ball.js';
 import { tryFracture } from './fracture.js';
@@ -117,10 +117,19 @@ function spawnImpactFor(mat, x, y, nx, ny, magnitude) {
       return spawnSparkle(x, y, nx, ny, magnitude, '#e0a0ff');
     case 'NEON':
       return spawnSparkle(x, y, nx, ny, magnitude, mat.color);
-    case 'RUBBER':
-      // rubber doesn't fling debris — a small deformation puff is enough
-      if (magnitude > 40) spawnSmoke(x, y, 0, 0, 'rgba(120,60,70,0.35)', 0.35);
+    case 'RUBBER': {
+      // Rubber doesn't fling debris — what you see instead is the sudden
+      // release of air compressed between the deforming surfaces on
+      // impact. Bigger hits get a second back-pressure cloud moving the
+      // other way, which reads as "the ball just smacked something hard."
+      if (magnitude > 120) {
+        spawnSmoke(x + nx * 3, y + ny * 3, nx * 42, ny * 42, 'rgba(205,170,175,0.40)', 0.42);
+        spawnSmoke(x, y,                   -nx * 16, -ny * 16, 'rgba(180,130,140,0.28)', 0.55);
+      } else if (magnitude > 40) {
+        spawnSmoke(x, y, 0, 0, 'rgba(120,60,70,0.30)', 0.35);
+      }
       return;
+    }
     case 'MERCURY':
       // silky liquid — no visible chips
       return;
@@ -214,7 +223,10 @@ export function collideBalls(a, b) {
   if (vn > 0) return;
 
   const baseE = Math.min(a.mat.restitution, b.mat.restitution);
-  const e = baseE * PHYS.restitutionMul * velRestScale(Math.abs(vn)) * heatRestMod(a) * heatRestMod(b);
+  // Use the softer material's velocity-restitution shape — rubber wants a
+  // bell curve (viscoelastic), everything else is monotonic plasticization.
+  const softerMat = a.mat.restitution < b.mat.restitution ? a.mat : b.mat;
+  const e = baseE * PHYS.restitutionMul * matVelRestScale(Math.abs(vn), softerMat) * heatRestMod(a) * heatRestMod(b);
   const invMa = a.pinned ? 0 : 1 / a.mass;
   const invMb = b.pinned ? 0 : 1 / b.mass;
   const invSum = invMa + invMb || 1;
@@ -284,9 +296,11 @@ export function collideBalls(a, b) {
 
     if (!aFractured) {
       spawnImpactFor(a.mat, hx, hy, nx, ny, mag);
-      // squash amplitude scales with material deformability
+      // squash amplitude scales with material deformability + optional
+      // per-material max compression override (rubber compresses harder).
       const dA = (a.mat.deform ?? 0.4);
-      a.squash = 1 - Math.min(0.35 * dA, mag * 0.0025 * dA);
+      const sqMaxA = a.mat.squashMax ?? 0.35;
+      a.squash = 1 - Math.min(sqMaxA * dA, mag * 0.0025 * dA);
       a.squashAng = Math.atan2(ny, nx);
       // The impact on `a` comes from the direction of `b` → contact point on
       // a is at (nx, ny) side. That's where the dent / crack sits.
@@ -296,7 +310,8 @@ export function collideBalls(a, b) {
     if (!bFractured) {
       spawnImpactFor(b.mat, hx, hy, -nx, -ny, mag);
       const dB = (b.mat.deform ?? 0.4);
-      b.squash = 1 - Math.min(0.35 * dB, mag * 0.0025 * dB);
+      const sqMaxB = b.mat.squashMax ?? 0.35;
+      b.squash = 1 - Math.min(sqMaxB * dB, mag * 0.0025 * dB);
       b.squashAng = Math.atan2(-ny, -nx);
       addDent(b, Math.atan2(-ny, -nx), mag);
       addCrack(b, Math.atan2(-ny, -nx), Math.abs(vn), a.mat);
@@ -326,7 +341,7 @@ export function collideWall(b, wall) {
   if (vn >= 0) return;
 
   const baseE = b.mat.restitution * (wall.bouncy ? 1.4 : 1);
-  const e = baseE * PHYS.restitutionMul * velRestScale(Math.abs(vn)) * heatRestMod(b);
+  const e = baseE * PHYS.restitutionMul * matVelRestScale(Math.abs(vn), b.mat) * heatRestMod(b);
   const tx = -ny, ty = nx;
   const vt = b.vx * tx + b.vy * ty;
   // Tangential surface velocity at the contact point from angular motion.
@@ -388,7 +403,8 @@ export function collideWall(b, wall) {
   if (mag > 5) {
     spawnImpactFor(b.mat, cx, cy, nx, ny, mag * 0.8);
     const dF = (b.mat.deform ?? 0.4);
-    b.squash = 1 - Math.min(0.4 * dF, Math.abs(vn) * 0.0008 * dF);
+    const sqMaxW = b.mat.squashMax ?? 0.4;
+    b.squash = 1 - Math.min(sqMaxW * dF, Math.abs(vn) * 0.0008 * dF);
     b.squashAng = Math.atan2(ny, nx);
     // Dent / crack sit on the side of the ball that actually touched the
     // wall — that's the direction from ball center to contact point,

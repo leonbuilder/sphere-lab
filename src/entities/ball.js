@@ -105,8 +105,17 @@ export class Ball {
 
   effectiveColor() {
     let c = this.mat.color;
-    if (PHYS.heatFx && this.heat > 0.05) c = mix(c, '#ffc040', Math.min(1, this.heat));
-    if (this.heat > 0.5) c = mix(c, '#ff4020', (this.heat - 0.5) * 2);
+    if (PHYS.heatFx && this.heat > 0.05) {
+      if (this.mat.name === 'RUBBER') {
+        // Rubber bloom — as rubber heats, internal waxes migrate to the
+        // surface and desaturate it toward a pale waxy gray. Not glowing
+        // embers (that's metal); rubber can't forge-glow at these temps.
+        c = mix(c, '#c4b4a8', Math.min(0.72, this.heat * 0.78));
+      } else {
+        c = mix(c, '#ffc040', Math.min(1, this.heat));
+        if (this.heat > 0.5) c = mix(c, '#ff4020', (this.heat - 0.5) * 2);
+      }
+    }
     return c;
   }
 }
