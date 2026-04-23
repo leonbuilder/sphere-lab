@@ -83,7 +83,8 @@
 </div>
 
 <!-- ============ LEFT PANEL — tools + materials + actions ============ -->
-<aside class="panel panel-left">
+<aside class="panel panel-left" id="panel-left">
+  <button class="panel-close" id="panel-left-close" data-tip="Hide left panel" aria-label="Hide left panel">×</button>
   <div class="panel-body">
 
     <div class="section">
@@ -122,7 +123,8 @@
 </aside>
 
 <!-- ============ RIGHT PANEL — physics + settings + visual + stats ============ -->
-<aside class="panel panel-right">
+<aside class="panel panel-right" id="panel-right">
+  <button class="panel-close" id="panel-right-close" data-tip="Hide right panel" aria-label="Hide right panel">×</button>
   <div class="panel-body">
 
     <div class="section">
@@ -200,6 +202,10 @@
 
   </div>
 </aside>
+
+<!-- ============ PANEL REOPEN HANDLES ============ -->
+<button class="panel-open panel-open-left"  id="panel-left-open"  data-tip="Show left panel"  aria-label="Show left panel">▶</button>
+<button class="panel-open panel-open-right" id="panel-right-open" data-tip="Show right panel" aria-label="Show right panel">◀</button>
 
 <!-- ============ BOTTOM MODE PILL ============ -->
 <div class="mode-pill" id="mode-indicator">

@@ -82,4 +82,30 @@ export function bindButtons() {
   document.getElementById('help').addEventListener('click', e => {
     if (e.target.id === 'help') e.currentTarget.classList.remove('show');
   });
+
+  // Collapsible side panels. Each panel has a small × to hide it; an edge
+  // handle appears to reopen. State persists between sessions so the user's
+  // preferred layout sticks.
+  for (const side of ['left', 'right']) {
+    const panel  = document.getElementById(`panel-${side}`);
+    const close  = document.getElementById(`panel-${side}-close`);
+    const open   = document.getElementById(`panel-${side}-open`);
+    close.onclick = () => setPanelOpen(side, false);
+    open.onclick  = () => setPanelOpen(side, true);
+  }
+}
+
+/** Collapse or reveal a side panel + persist the choice. */
+export function setPanelOpen(side, isOpen) {
+  const panel = document.getElementById(`panel-${side}`);
+  const handle = document.getElementById(`panel-${side}-open`);
+  if (!panel || !handle) return;
+  if (isOpen) {
+    panel.classList.remove('collapsed');
+    handle.classList.remove('show');
+  } else {
+    panel.classList.add('collapsed');
+    handle.classList.add('show');
+  }
+  savePref(`panel-${side}-open`, isOpen ? 1 : 0);
 }

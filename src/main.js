@@ -15,7 +15,7 @@ import { PHYS } from './core/config.js';
 import { resize } from './render/canvas.js';
 import { buildMatButtons } from './ui/materials.js';
 import { bindSliders } from './ui/sliders.js';
-import { bindButtons } from './ui/buttons.js';
+import { bindButtons, setPanelOpen } from './ui/buttons.js';
 import { setTool } from './input/tools.js';
 import { loadScene } from './scenes/index.js';
 import { startLoop } from './loop.js';
@@ -55,6 +55,10 @@ function applySavedPrefs() {
   if (MATERIALS[matId] && MAT_KEYS.includes(matId)) { selectedMat.id = matId; }
 
   applyTheme(getPref('theme', 'amber'));
+
+  // Restore side-panel open/closed state. Default to open on first run.
+  setPanelOpen('left',  !!getPref('panel-left-open',  1));
+  setPanelOpen('right', !!getPref('panel-right-open', 1));
 }
 
 function init() {

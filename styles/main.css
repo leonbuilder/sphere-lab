@@ -146,10 +146,76 @@ html, body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: transform 0.22s var(--ease), opacity 0.22s var(--ease);
 }
 
 .panel-left  { left: var(--s-5); }
 .panel-right { right: var(--s-5); }
+
+/* Collapsed = slide the panel off-screen + fade. pointer-events off so it
+ * doesn't swallow clicks on canvas while hidden. */
+.panel-left.collapsed  { transform: translateX(calc(-100% - var(--s-5) - 2px)); opacity: 0; pointer-events: none; }
+.panel-right.collapsed { transform: translateX(calc( 100% + var(--s-5) + 2px)); opacity: 0; pointer-events: none; }
+
+/* Close "×" button in the top corner of each panel. Sits above scroll content. */
+.panel-close {
+  position: absolute;
+  top: 6px;
+  width: 22px; height: 22px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 26, 39, 0.75);
+  border: 1px solid var(--stroke-b);
+  border-radius: var(--r-1);
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.panel-left  .panel-close { right: 6px; }
+.panel-right .panel-close { right: 6px; }
+.panel-close:hover {
+  background: var(--bg-3);
+  color: var(--text-0);
+  border-color: var(--stroke-c);
+}
+
+/* Edge handle that appears when a panel is collapsed. Small vertical tab
+ * so the chrome doesn't compete with the panels when they're open. */
+.panel-open {
+  position: fixed;
+  top: 50%;
+  width: 22px;
+  height: 56px;
+  transform: translateY(-50%);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 17, 27, 0.82);
+  border: 1px solid var(--stroke-b);
+  color: var(--text-1);
+  font-size: 12px;
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+  z-index: 3;
+  padding: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.panel-open:hover {
+  background: var(--bg-3);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+.panel-open.show { display: flex; }
+.panel-open-left  { left: 0;  border-left: none;  border-radius: 0 var(--r-2) var(--r-2) 0; }
+.panel-open-right { right: 0; border-right: none; border-radius: var(--r-2) 0 0 var(--r-2); }
 
 .panel-body {
   flex: 1;
