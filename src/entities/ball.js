@@ -46,9 +46,16 @@ export class Ball {
     this.squashAng = 0;
     this.trailT = 0;
     /** @type {{x:number,y:number}[]} */ this.trail = [];
-    this.heat = 0;
+    /** Some materials start hot (LAVA at spawn). Everything else is cold. */
+    this.heat = mat.initHeat ?? 0;
     this.charge = 0;
     this.sparkT = 0;
+
+    /** TNT fuse countdown. 0 = not lit, >0 = detonates when it reaches 0. */
+    this.fuseT = 0;
+    /** How many slime bonds this ball is currently part of — capped so
+     *  a single slime ball can't sprout a hundred springs in a pile. */
+    this.slimeBonds = 0;
 
     /** Sleep state. `sleeping === true` skips most of the per-step work. */
     this.sleeping = false;

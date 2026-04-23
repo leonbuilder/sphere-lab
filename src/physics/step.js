@@ -24,6 +24,8 @@ import { collideBalls, collideWall, collidePeg } from './collisions.js';
 import { updateFlippers, collideFlipper } from './flippers.js';
 import { applyVortex, applySolar, applyBuoyancy, applyMagnetism, stepRipples } from './forces.js';
 import { buildPairs } from './broadphase.js';
+import { processTNT } from './tnt.js';
+import { breakSlimeBonds } from './adhesion.js';
 import { mouse } from '../input/mouse.js';
 import { getTool } from '../input/tools.js';
 
@@ -131,6 +133,46 @@ export function physicsStep(dt) {
     if (b.lifespan !== undefined) {
       b.lifespan -= dt;
       if (b.lifespan <= 0) { b._dead = true; continue; }
+    }
+
+    // Lava → rock phase change. Molten materials radiate heat (visualized
+    // as shimmer / glow via existing heat FX) until heat decays below a
+    // threshold, at which point the ball swaps to its `solidifiesTo`
+    // material. We swap material + recompute mass-dependent fields so the
+    // physics pipeline sees a proper rock from the next step onward.
+    if (mat.molten && mat.solidifiesTo && b.heat < 0.08 && !b.isFragment) {
+      const next = MATERIALS[mat.solidifiesTo];
+      if (next) {
+        b.mat = next;
+        b.mass = b.r * b.r * next.density * 0.001;
+        b.inertia = 0.5 * b.mass * b.r * b.r;
+        b.heat = 0;
+        // One-shot dust puff as the crust forms.
+        spawnSmoke(b.x + rand(-b.r * 0.4, b.r * 0.4), b.y - b.r * 0.4, 0, -10,
+                   'rgba(70,55,45,0.45)', 0.6);
+      }
+    }
+
+    // TNT lit by heat — sitting in lava or a big fire heats TNT to its
+    // auto-ignition point. Lights a standard fuse (not the shorter chain
+    // fuse) so the player sees a moment of warning.
+    if (mat.explosive && b.heat > 0.65 && b.fuseT <= 0 && !b.isFragment) {
+      b.fuseT = 0.35;
+    }
+
+    // TNT fuse — tiny sparks fly off while the fuse burns, plus warning
+    // sparkle cadence that gets frantic near detonation.
+    if (b.fuseT > 0 && !b.isFragment) {
+      const urgency = 1 - (b.fuseT / 0.35);
+      if (Math.random() < dt * (18 + urgency * 40)) {
+        particles.push({
+          x: b.x + rand(-b.r * 0.35, b.r * 0.35),
+          y: b.y - b.r * 0.95,
+          vx: rand(-30, 30), vy: -rand(40, 120),
+          life: 0.35, maxLife: 0.35,
+          color: '#ffd870', size: rand(1, 2.2), type: 'spark'
+        });
+      }
     }
 
     if (b.pinned) { b.vx = b.vy = b.omega = 0; continue; }
@@ -429,6 +471,14 @@ export function physicsStep(dt) {
     }
   }
   for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
+
+  // Post-solver systems:
+  //  - TNT fuses tick + detonate (can flag other balls `_dead`).
+  //  - Slime bonds break if over-stretched or endpoints are gone.
+  // Both must run before the dead-ball cleanup below so freed bonds +
+  // exploded TNT corpses disappear in the same frame.
+  processTNT(dt);
+  breakSlimeBonds();
 
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];

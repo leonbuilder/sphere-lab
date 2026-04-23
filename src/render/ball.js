@@ -268,6 +268,86 @@ function getMatTexture(matName) {
       }
       break;
     }
+    case 'TNT': {
+      // Dynamite stripes — alternating dark bands with lighter paper
+      // between them. Baked in pattern space so they rotate with the ball.
+      for (let i = 0; i < TEX_SIZE; i += 12) {
+        tc.fillStyle = 'rgba(40,10,10,0.55)';
+        tc.fillRect(i, 0, 6, TEX_SIZE);
+      }
+      // Fine paper texture between stripes
+      for (let i = 0; i < 80; i++) {
+        tc.fillStyle = `rgba(255,210,180,${0.10 + Math.random() * 0.14})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.3 + Math.random() * 0.5, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
+    case 'LAVA': {
+      // Molten crust — dark craze lines where the surface has started to
+      // cool, with bright orange in between. Overlay blend preserves the
+      // hot glow behind it.
+      for (let i = 0; i < 40; i++) {
+        tc.strokeStyle = `rgba(30,10,0,${0.25 + Math.random() * 0.35})`;
+        tc.lineWidth = 0.6 + Math.random() * 0.6;
+        tc.beginPath();
+        const x0 = Math.random() * TEX_SIZE, y0 = Math.random() * TEX_SIZE;
+        const x1 = x0 + (Math.random() - 0.5) * 24;
+        const y1 = y0 + (Math.random() - 0.5) * 24;
+        tc.moveTo(x0, y0); tc.lineTo(x1, y1);
+        tc.stroke();
+      }
+      // Bright molten specks
+      for (let i = 0; i < 24; i++) {
+        tc.fillStyle = `rgba(255,220,150,${0.35 + Math.random() * 0.4})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.5 + Math.random() * 0.9, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
+    case 'ROCK': {
+      // Basalt grain — dense fine dark pits + sparse lighter mineral specks.
+      for (let i = 0; i < 120; i++) {
+        tc.fillStyle = `rgba(10,6,4,${0.35 + Math.random() * 0.35})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.3 + Math.random() * 0.7, 0, TAU);
+        tc.fill();
+      }
+      for (let i = 0; i < 14; i++) {
+        tc.fillStyle = `rgba(180,150,110,${0.18 + Math.random() * 0.16})`;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, 0.4 + Math.random() * 0.8, 0, TAU);
+        tc.fill();
+      }
+      break;
+    }
+    case 'SLIME': {
+      // Inner bubbles — pale circles suggesting suspended air pockets. With
+      // refraction on, these read as "bubbles in a gel."
+      for (let i = 0; i < 14; i++) {
+        const rad = 1.4 + Math.random() * 3.2;
+        tc.strokeStyle = `rgba(255,255,255,${0.16 + Math.random() * 0.18})`;
+        tc.lineWidth = 0.5;
+        tc.beginPath();
+        tc.arc(Math.random() * TEX_SIZE, Math.random() * TEX_SIZE, rad, 0, TAU);
+        tc.stroke();
+      }
+      // Darker green veins
+      for (let i = 0; i < 5; i++) {
+        tc.strokeStyle = `rgba(40,80,25,${0.20 + Math.random() * 0.15})`;
+        tc.lineWidth = 0.5;
+        tc.beginPath();
+        const x0 = Math.random() * TEX_SIZE, y0 = Math.random() * TEX_SIZE;
+        tc.moveTo(x0, y0);
+        for (let px = 0; px <= 24; px += 4) {
+          tc.lineTo(x0 + px, y0 + Math.sin(px * 0.3 + i) * 3);
+        }
+        tc.stroke();
+      }
+      break;
+    }
     case 'DIAMOND': {
       // Sparse brilliant facet highlights — bright specks of light
       for (let i = 0; i < 14; i++) {
@@ -940,6 +1020,41 @@ export function drawBall(tx, b) {
   }
 
   tx.restore();
+
+  // TNT fuse — a short upright fuse stub above the ball with a white tip.
+  // When the fuse is burning, the tip ignites (bright glowing spark + a
+  // tiny moving ember at the burn line). Fuse rotates with the ball so
+  // tumbling TNT reads as a physical stick of dynamite, not a decal.
+  if (mat.name === 'TNT' && !b.isFragment) {
+    tx.save();
+    tx.translate(x, y);
+    tx.rotate(b.angle);
+    const fuseLen = r * 0.55;
+    const fuseX = 0;
+    const fuseY = -r - fuseLen * 0.5;
+    tx.strokeStyle = '#d8b87a';
+    tx.lineWidth = 1.6;
+    tx.lineCap = 'round';
+    tx.beginPath();
+    tx.moveTo(fuseX, -r + 1);
+    tx.lineTo(fuseX, fuseY - fuseLen * 0.5);
+    tx.stroke();
+    if (b.fuseT > 0) {
+      // bright burning tip + glow
+      const urgency = Math.min(1, 1 - (b.fuseT / 0.35));
+      const tipR = 1.4 + urgency * 1.2;
+      const tipY = fuseY - fuseLen * 0.5;
+      const g = tx.createRadialGradient(fuseX, tipY, 0, fuseX, tipY, tipR * 3.5);
+      g.addColorStop(0,   'rgba(255,240,120,1)');
+      g.addColorStop(0.4, 'rgba(255,150,40,0.65)');
+      g.addColorStop(1,   'rgba(255,150,40,0)');
+      tx.fillStyle = g;
+      tx.beginPath(); tx.arc(fuseX, tipY, tipR * 3.5, 0, TAU); tx.fill();
+      tx.fillStyle = '#ffffff';
+      tx.beginPath(); tx.arc(fuseX, tipY, tipR, 0, TAU); tx.fill();
+    }
+    tx.restore();
+  }
 
   // Diamond brilliance — flickering cross-stars at fixed ball-local angles,
   // additive-blended so they genuinely glint. Each star has its own drift

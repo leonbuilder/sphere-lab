@@ -21,7 +21,7 @@
  */
 
 /**
- * @typedef {'steel'|'rubber'|'glass'|'bowling'|'neon'|'gold'|'plasma'|'ice'|'magnet'|'mercury'|'diamond'|'obsidian'} MaterialId
+ * @typedef {'steel'|'rubber'|'glass'|'bowling'|'neon'|'gold'|'plasma'|'ice'|'magnet'|'mercury'|'diamond'|'obsidian'|'tnt'|'lava'|'rock'|'slime'} MaterialId
  */
 
 /**
@@ -51,6 +51,12 @@
  * @property {number}  [brushAxis]  — brush direction in ball-local frame, radians
  * @property {number}  [clearcoat]  — 0..1 thin glossy top layer on metals (sharp specular lobe)
  * @property {number}  [squashMax]  — peak compression depth (0..1). Default 0.35 for balls / 0.40 for walls
+ * @property {boolean} [explosive]  — detonates when hit above `detonateV`; radial blast
+ * @property {number}  [detonateV]  — impact normal-velocity that lights the fuse (px/s)
+ * @property {boolean} [molten]     — spawns hot, radiates heat, cools into `solidifiesTo`
+ * @property {MaterialId} [solidifiesTo] — material the ball becomes when cool (below 0.08 heat)
+ * @property {number}  [initHeat]   — heat at spawn (0..1). Default 0.
+ * @property {boolean} [adhesive]   — forms temporary springs with anything it touches
  */
 
 /** @type {Record<MaterialId, Material>} */
@@ -75,7 +81,24 @@ export const MATERIALS = {
   // easier than glass (lower fracture threshold) and breaks into jagged
   // angular spikes instead of soft shards. Low thermal conductivity, poor
   // bounce, glossy metallic sheen.
-  obsidian: { name: 'OBSIDIAN', color: '#1f1824', density: 2.55, restitution: 0.32, friction: 0.14, metallic: 0.70, glow: 0,    refract: 0.20, pitch: 900,  timbre: 'sine',     deform: 0.0,  roll: 0.010, heatKeep: 0.9960, cond: 0.18, bounceBack: 0.00, fragile: true }
+  obsidian: { name: 'OBSIDIAN', color: '#1f1824', density: 2.55, restitution: 0.32, friction: 0.14, metallic: 0.70, glow: 0,    refract: 0.20, pitch: 900,  timbre: 'sine',     deform: 0.0,  roll: 0.010, heatKeep: 0.9960, cond: 0.18, bounceBack: 0.00, fragile: true },
+  // TNT — dynamite-red with a fuse. Detonates when hit hard enough, applying
+  // a radial impulse + heat pulse to everything in range. Chain-reacts with
+  // other TNT in the blast radius via a short fuse delay so cascades read
+  // as a visible sweep, not one instantaneous flash.
+  tnt:     { name: 'TNT',     color: '#d13838', density: 1.40, restitution: 0.28, friction: 0.65, metallic: 0,    glow: 0.12, refract: 0,    pitch: 180,  timbre: 'sawtooth', deform: 0.22, roll: 0.05,  heatKeep: 0.9960, cond: 0.30, bounceBack: 0.05, hardness: 0.20, explosive: true, detonateV: 500 },
+  // Lava — molten fluid at spawn; heat decays normally (heatKeep 1.0 is
+  // still < 1 after frame-rate compounding) and below 0.08 the ball swaps
+  // material to ROCK. Fluid so lava pools merge like mercury. Heat
+  // conducts to neighbors via the existing conduction path in collisions.
+  lava:    { name: 'LAVA',    color: '#ff6a1a', density: 2.80, restitution: 0.15, friction: 0.48, metallic: 0.08, glow: 1.00, refract: 0,    pitch: 150,  timbre: 'triangle', deform: 0.80, roll: 0.04,  heatKeep: 0.9992, cond: 0.60, bounceBack: 0.25, fluid: true, molten: true, initHeat: 1.0, solidifiesTo: 'rock' },
+  // Rock — cooled lava. Dense basalt; not fluid, no glow. Selectable on
+  // its own too so you can drop heavy rocks into any scene.
+  rock:    { name: 'ROCK',    color: '#3d322a', density: 2.70, restitution: 0.20, friction: 0.78, metallic: 0,    glow: 0,    refract: 0,    pitch: 200,  timbre: 'square',   deform: 0.15, roll: 0.05,  heatKeep: 0.9960, cond: 0.25, bounceBack: 0.05, hardness: 0.50 },
+  // Slime — soft, clingy. On collision it forms a short-lived spring with
+  // the contacted ball (see `tryAdhere` in collisions). Bonds break above
+  // a stretch + force threshold so a hard hit rips free. Translucent body.
+  slime:   { name: 'SLIME',   color: '#7de65a', density: 0.95, restitution: 0.45, friction: 0.75, metallic: 0,    glow: 0.06, refract: 0.42, pitch: 340,  timbre: 'sine',     deform: 0.95, roll: 0.10,  heatKeep: 0.9950, cond: 0.10, bounceBack: 0.75, squashMax: 0.55, adhesive: true }
 };
 
 /** @type {MaterialId[]} */

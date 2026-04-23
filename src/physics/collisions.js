@@ -23,6 +23,8 @@ import { matVelRestScale, heatRestMod, heatFricMod, combineFriction, invMass } f
 import { stats } from './stats.js';
 import { wake, balls, Ball } from '../entities/ball.js';
 import { tryFracture } from './fracture.js';
+import { lightFuse } from './tnt.js';
+import { tryAdhere } from './adhesion.js';
 
 /** How many dents a gold ball can carry before new ones replace the oldest. */
 const MAX_DENTS = 9;
@@ -298,6 +300,17 @@ export function collideBalls(a, b) {
   const aFractured = tryFracture(a, Math.abs(vn));
   const bFractured = tryFracture(b, Math.abs(vn));
 
+  // TNT — hard enough contact lights the fuse. Uses material-defined
+  // threshold so gentle stacking doesn't detonate the pile.
+  if (!aFractured && a.mat.explosive && Math.abs(vn) > (a.mat.detonateV || 260)) lightFuse(a);
+  if (!bFractured && b.mat.explosive && Math.abs(vn) > (b.mat.detonateV || 260)) lightFuse(b);
+
+  // Slime — form an adhesion spring between the pair when either side is
+  // sticky. Hard hits are allowed to skip adhesion (rip-free on impact).
+  if (!aFractured && !bFractured && (a.mat.adhesive || b.mat.adhesive)) {
+    tryAdhere(a, b, Math.abs(vn));
+  }
+
   const mag = Math.abs(j);
   if (mag > 2) {
     const hx = (a.x + b.x) * 0.5;
@@ -408,6 +421,9 @@ export function collideWall(b, wall) {
   // wall fracture check
   if (tryFracture(b, Math.abs(vn))) return;
 
+  // TNT — wall slam can also trigger the fuse if the hit is hard enough.
+  if (b.mat.explosive && Math.abs(vn) > (b.mat.detonateV || 260)) lightFuse(b);
+
   const mag = Math.abs(vn) * b.mass;
   if (mag > 5) {
     spawnImpactFor(b.mat, cx, cy, nx, ny, mag * 0.8);
@@ -463,6 +479,9 @@ export function collidePeg(b, peg) {
   b.contactNy = ny;
 
   if (tryFracture(b, Math.abs(vn))) return;
+
+  // TNT detonation from a hard peg hit as well (bumpers count).
+  if (b.mat.explosive && Math.abs(vn) > (b.mat.detonateV || 260)) lightFuse(b);
 
   const mag = Math.abs(vn) * b.mass;
   if (mag > 4) {
