@@ -28,7 +28,7 @@ import { drawBall, drawTrail } from './render/ball.js';
 import { drawAO, drawParticles, drawLensFlares, drawPlasmaArcs } from './render/effects.js';
 import { doBloomPass, doPostFX } from './render/postfx.js';
 import { renderSparkline } from './render/statsGraph.js';
-import { mouse, meshRadius } from './input/mouse.js';
+import { mouse, meshRadius, tickMouse } from './input/mouse.js';
 import { getTool } from './input/tools.js';
 import { updateInspector } from './ui/inspector.js';
 
@@ -68,6 +68,10 @@ function frame(now) {
   cam.x    = lerp(cam.x,    cam.tx, clamp(dt * 10, 0, 1));
   cam.y    = lerp(cam.y,    cam.ty, clamp(dt * 10, 0, 1));
   cam.zoom = lerp(cam.zoom, cam.tz, clamp(dt * 12, 0, 1));
+
+  // Mouse tick — currently runs the auto-repeat link logic. Ticks even
+  // while physics is paused so the feature works in a frozen scene too.
+  tickMouse(dt);
 
   if (!PHYS.paused) {
     accumulator += dt * PHYS.slowmo;

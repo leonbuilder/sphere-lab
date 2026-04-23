@@ -43,6 +43,49 @@ export function meshRadius() {
   return Math.max(MESH_MIN_R, Math.hypot(mouse.wx - mouse.mesh.cx, mouse.wy - mouse.mesh.cy));
 }
 
+// Live shift tracking so the auto-repeat + hub-link features react the
+// moment the user presses or releases Shift, instead of only at click
+// time (mousedown sampled e.shiftKey but never updated after).
+addEventListener('keydown', e => { if (e.key === 'Shift') mouse.shift = true; });
+addEventListener('keyup',   e => { if (e.key === 'Shift') mouse.shift = false; });
+// The window can lose focus while Shift is down (alt-tab, cmd-tab). Any
+// re-focus clears the stale state so the user isn't stuck in auto-repeat.
+addEventListener('blur', () => { mouse.shift = false; });
+
+/* ------------------------------------------------------------------ */
+/*  Auto-repeat link (hold shift + mouse on a target to spam strands)  */
+/* ------------------------------------------------------------------ */
+let _autoLinkT = 0;
+/** How fast auto-repeat fires. 120 ms → ~8 strands per second, which is
+ *  fast enough to heavily reinforce in a second of holding but slow
+ *  enough that the user can release at a specific strand count. */
+const AUTO_LINK_INTERVAL = 0.12;
+
+/** Called each frame from loop.js. When the user holds the mouse on a
+ *  target ball while Shift is down, keeps creating reinforcement strands
+ *  at a steady cadence so they don't have to click repeatedly.           */
+export function tickMouse(dt) {
+  if (mouse.down && mouse.shift && mouse.linkFirst && getTool() === 'link') {
+    const hit = ballAt(mouse.wx, mouse.wy);
+    if (hit && hit !== mouse.linkFirst) {
+      _autoLinkT += dt;
+      if (_autoLinkT >= AUTO_LINK_INTERVAL) {
+        _autoLinkT = 0;
+        const s = createLink(mouse.linkFirst, hit);
+        // Share chainSprings with drag-chain so the whole held gesture
+        // batches into one undo entry.
+        mouse.chainSprings.push(s);
+      }
+    } else {
+      // Cursor drifted off the target — pause the timer so the first
+      // strand after coming back on waits a full interval.
+      _autoLinkT = 0;
+    }
+  } else {
+    _autoLinkT = 0;
+  }
+}
+
 /** Build a spring between two balls with reinforcement-aware attachment
  *  offsets. Pushes the spring to W.springs, plays the click, returns it. */
 function createLink(a, b) {
