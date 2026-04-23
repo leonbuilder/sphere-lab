@@ -28,7 +28,7 @@ import { drawBall, drawTrail } from './render/ball.js';
 import { drawAO, drawParticles, drawLensFlares, drawPlasmaArcs } from './render/effects.js';
 import { doBloomPass, doPostFX } from './render/postfx.js';
 import { renderSparkline } from './render/statsGraph.js';
-import { mouse } from './input/mouse.js';
+import { mouse, meshRadius } from './input/mouse.js';
 import { getTool } from './input/tools.js';
 import { updateInspector } from './ui/inspector.js';
 
@@ -197,6 +197,43 @@ function drawToolPreviews(tx) {
     tx.setLineDash([]);
     tx.strokeStyle = '#b285ff'; tx.lineWidth = 2;
     tx.beginPath(); tx.arc(mouse.linkFirst.x, mouse.linkFirst.y, mouse.linkFirst.r + 3, 0, TAU); tx.stroke();
+  }
+
+  // Ctrl-click auto-mesh preview — dashed radius circle + ghost lines
+  // to every ball that'll get connected on release.
+  if (TOOL === 'link' && mouse.mesh.active && mouse.mesh.source) {
+    const cx = mouse.mesh.cx, cy = mouse.mesh.cy;
+    const r = meshRadius();
+    const src = mouse.mesh.source;
+    tx.strokeStyle = '#b285ff';
+    tx.setLineDash([6, 4]);
+    tx.lineWidth = 2;
+    tx.globalAlpha = 0.7;
+    tx.beginPath(); tx.arc(cx, cy, r, 0, TAU); tx.stroke();
+    tx.setLineDash([]);
+    tx.globalAlpha = 1;
+
+    // Source ball ring + ghost lines to eligible targets
+    tx.strokeStyle = '#b285ff';
+    tx.lineWidth = 2;
+    tx.beginPath(); tx.arc(src.x, src.y, src.r + 3, 0, TAU); tx.stroke();
+
+    const r2 = r * r;
+    tx.strokeStyle = 'rgba(178,133,255,0.55)';
+    tx.lineWidth = 1;
+    for (const b of balls) {
+      if (b === src) continue;
+      const dx = b.x - cx, dy = b.y - cy;
+      if (dx * dx + dy * dy > r2) continue;
+      // Also skip pairs already linked — commit path skips them too, so
+      // the preview should reflect that.
+      let linked = false;
+      for (const sp of W.springs) {
+        if ((sp.a === src && sp.b === b) || (sp.a === b && sp.b === src)) { linked = true; break; }
+      }
+      if (linked) continue;
+      tx.beginPath(); tx.moveTo(src.x, src.y); tx.lineTo(b.x, b.y); tx.stroke();
+    }
   }
 
   if (TOOL === 'push' || TOOL === 'attract' || TOOL === 'heat') {

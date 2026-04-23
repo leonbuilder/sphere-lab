@@ -25,8 +25,23 @@ export const mouse = {
   draw: { x1: 0, y1: 0, active: false },
   /** Springs created within a single drag-chain gesture — batched into a
    *  single undo entry on mouseup so Ctrl-Z removes the whole chain. */
-  /** @type {any[]} */ chainSprings: []
+  /** @type {any[]} */ chainSprings: [],
+  /** Ctrl-click auto-mesh: `mesh.source` is the center ball, `mesh.cx/cy`
+   *  is the initial click position in world coords, and the effective
+   *  radius is computed live from cursor distance to (cx, cy). */
+  mesh: {
+    active: false,
+    /** @type {import('../entities/ball.js').Ball | null} */ source: null,
+    cx: 0, cy: 0
+  }
 };
+
+/** Default mesh radius when user Ctrl-clicks without dragging. */
+export const MESH_MIN_R = 120;
+
+export function meshRadius() {
+  return Math.max(MESH_MIN_R, Math.hypot(mouse.wx - mouse.mesh.cx, mouse.wy - mouse.mesh.cy));
+}
 
 /** Build a spring between two balls with reinforcement-aware attachment
  *  offsets. Pushes the spring to W.springs, plays the click, returns it. */
@@ -87,6 +102,19 @@ canvas.addEventListener('mousedown', e => {
   }
 
   if (TOOL === 'link') {
+    // Ctrl-click: auto-mesh mode. Commits on mouseup. If the user just
+    // clicks without dragging, the minimum radius (MESH_MIN_R) is used;
+    // if they drag outward, the radius grows to the drag distance.
+    if (e.ctrlKey || e.metaKey) {
+      const b = ballAt(mouse.wx, mouse.wy);
+      if (b) {
+        mouse.mesh.active = true;
+        mouse.mesh.source = b;
+        mouse.mesh.cx = mouse.wx;
+        mouse.mesh.cy = mouse.wy;
+      }
+      return;
+    }
     const b = ballAt(mouse.wx, mouse.wy);
     if (!b) {
       // Click on empty space cancels an in-progress source selection.
@@ -197,6 +225,44 @@ addEventListener('mouseup', e => {
         if (i >= 0) W.springs.splice(i, 1);
       }
     });
+    return;
+  }
+
+  // Ctrl-click auto-mesh: commit the radius reached at release, linking
+  // the source ball to every other ball inside it (that isn't already
+  // linked). One click → potentially many links. Batched undo.
+  if (TOOL === 'link' && mouse.mesh.active && mouse.mesh.source) {
+    const src = mouse.mesh.source;
+    const cx = mouse.mesh.cx, cy = mouse.mesh.cy;
+    const r = meshRadius();
+    const r2 = r * r;
+    const created = [];
+    for (const other of balls) {
+      if (other === src) continue;
+      const dx = other.x - cx, dy = other.y - cy;
+      if (dx * dx + dy * dy > r2) continue;
+      // Skip pairs that already have any spring — repeated ctrl-clicks
+      // shouldn't keep stacking strands silently. Users who want
+      // reinforcement have shift-click + drag-chain for that.
+      let existing = false;
+      for (const sp of W.springs) {
+        if ((sp.a === src && sp.b === other) || (sp.a === other && sp.b === src)) {
+          existing = true; break;
+        }
+      }
+      if (existing) continue;
+      created.push(createLink(src, other));
+    }
+    if (created.length) {
+      pushUndo(() => {
+        for (const sp of created) {
+          const i = W.springs.indexOf(sp);
+          if (i >= 0) W.springs.splice(i, 1);
+        }
+      });
+    }
+    mouse.mesh.active = false;
+    mouse.mesh.source = null;
     return;
   }
 
